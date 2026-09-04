@@ -24,11 +24,25 @@ const start = async () => {
   }
 
   // 4. Start Express server
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     logger.info(`✅ picky-server running on http://localhost:${PORT}`);
     logger.info(`📡 API: http://localhost:${PORT}/api/v1`);
     logger.info(`🏥 Health: http://localhost:${PORT}/health`);
   });
+
+  // Graceful shutdown on cloud deployment (Render, AWS, Docker)
+  const shutdown = async (signal) => {
+    logger.info(`Received ${signal}. Shutting down gracefully...`);
+    server.close(async () => {
+      const mongoose = require('mongoose');
+      await mongoose.connection.close();
+      logger.info('MongoDB connection closed.');
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 };
 
 start().catch((err) => {

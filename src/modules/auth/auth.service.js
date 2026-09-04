@@ -99,6 +99,17 @@ const AuthService = {
       await redis.del(`refresh:${decoded.id}`);
     } catch (_) { /* ignore expired token on logout */ }
   },
+
+  async updateProfile(userId, { name, email, defaultAddress }) {
+    const update = {};
+    if (name !== undefined) update.name = name.trim();
+    if (email !== undefined) update.email = email.toLowerCase().trim();
+    if (defaultAddress !== undefined) update.defaultAddress = defaultAddress;
+
+    const user = await User.findByIdAndUpdate(userId, update, { new: true }).select('-password -__v').lean();
+    if (!user) throw new AppError('User not found', 404);
+    return user;
+  },
 };
 
 module.exports = AuthService;

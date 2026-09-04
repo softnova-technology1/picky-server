@@ -11,5 +11,6 @@ router.post('/admin/login', authController.adminLogin);
 router.post('/refresh', validate(refreshTokenSchema), authController.refreshToken);
 router.post('/logout', authController.logout);
 router.get('/me', authenticate, authController.getMe);
+router.patch('/profile', authenticate, authController.updateProfile);
 
 module.exports = router;

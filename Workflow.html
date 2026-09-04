@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Picky — Interactive Visual Workflows (Light Theme)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-body: #f8fafc;
+      --bg-surface: #ffffff;
+      --bg-surface-subtle: #f1f5f9;
+      --border-color: #e2e8f0;
+      --border-accent: #cbd5e1;
+      
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --text-subtle: #94a3b8;
+      
+      /* Distinct Role & Component Palette for Easy Identity */
+      --color-customer: #0284c7;       /* Sky Blue */
+      --color-customer-bg: #e0f2fe;
+      --color-frontend: #4f46e5;       /* Indigo */
+      --color-frontend-bg: #eef2ff;
+      --color-backend: #059669;        /* Emerald */
+      --color-backend-bg: #ecfdf5;
+      --color-db: #d97706;             /* Amber */
+      --color-db-bg: #fffbeb;
+      --color-wati: #16a34a;           /* Green */
+      --color-wati-bg: #dcfce7;
+      --color-razorpay: #7c3aed;       /* Purple */
+      --color-razorpay-bg: #f3e8ff;
+      --color-admin: #dc2626;          /* Crimson */
+      --color-admin-bg: #fee2e2;
+
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.08), 0 2px 4px -1px rgba(0,0,0,0.04);
+      --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.08), 0 4px 6px -2px rgba(0,0,0,0.03);
+      --radius-lg: 16px;
+      --radius-md: 10px;
+      --radius-sm: 6px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: var(--bg-body);
+      color: var(--text-main);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Top Navigation */
+    header {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border-color);
+      padding: 0.75rem 2rem;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .brand-logo {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 1.3rem; font-weight: 800; color: #4f46e5;
+    }
+    .nav-links { display: flex; gap: 0.5rem; list-style: none; }
+    .nav-link-btn {
+      text-decoration: none; font-size: 0.82rem; font-weight: 600;
+      padding: 6px 14px; border-radius: var(--radius-sm);
+      color: var(--text-muted); transition: all 0.2s;
+    }
+    .nav-link-btn:hover { color: #4f46e5; background: var(--color-frontend-bg); }
+    .nav-link-btn.active { color: #ffffff; background: #4f46e5; }
+    .nav-link-arch {
+      font-size: 0.82rem; font-weight: 700; color: #0f172a;
+      border: 1px solid var(--border-color); padding: 6px 14px;
+      border-radius: var(--radius-sm); text-decoration: none;
+      background: var(--bg-surface); transition: all 0.2s;
+    }
+    .nav-link-arch:hover { background: var(--bg-surface-subtle); border-color: var(--border-accent); }
+
+    /* Main Container */
+    .app-container { max-width: 1400px; margin: 0 auto; padding: 2.5rem 2rem; }
+
+    /* Page Header */
+    .page-header { text-align: center; margin-bottom: 3rem; }
+    .pill-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--color-frontend-bg); color: #4f46e5;
+      font-size: 0.78rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 1px; padding: 6px 16px; border-radius: 50px;
+      border: 1px solid rgba(79, 70, 229, 0.2); margin-bottom: 1rem;
+    }
+    .page-title {
+      font-size: clamp(2rem, 4vw, 3rem); font-weight: 800;
+      color: var(--text-main); letter-spacing: -0.5px; margin-bottom: 0.75rem;
+    }
+    .page-desc {
+      font-size: 1.05rem; color: var(--text-muted); max-width: 750px;
+      margin: 0 auto; line-height: 1.7;
+    }
+
+    /* Entity Legend Bar (Easy Identity) */
+    .legend-bar {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 1rem 1.5rem;
+      margin-bottom: 2.5rem;
+      display: flex; align-items: center; justify-content: center;
+      flex-wrap: wrap; gap: 1.25rem;
+      box-shadow: var(--shadow-sm);
+    }
+    .legend-title { font-size: 0.78rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: var(--text-subtle); margin-right: 0.5rem; }
+    .legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; font-weight: 700; }
+    .legend-tag {
+      padding: 4px 10px; border-radius: var(--radius-sm); font-size: 0.75rem;
+      font-family: 'JetBrains Mono', monospace; font-weight: 600;
+    }
+    .tag-cust { background: var(--color-customer-bg); color: var(--color-customer); border: 1px solid rgba(2, 132, 199, 0.3); }
+    .tag-front { background: var(--color-frontend-bg); color: var(--color-frontend); border: 1px solid rgba(79, 70, 229, 0.3); }
+    .tag-back { background: var(--color-backend-bg); color: var(--color-backend); border: 1px solid rgba(5, 150, 105, 0.3); }
+    .tag-db { background: var(--color-db-bg); color: var(--color-db); border: 1px solid rgba(217, 119, 6, 0.3); }
+    .tag-wati { background: var(--color-wati-bg); color: var(--color-wati); border: 1px solid rgba(22, 163, 74, 0.3); }
+    .tag-rzp { background: var(--color-razorpay-bg); color: var(--color-razorpay); border: 1px solid rgba(124, 58, 237, 0.3); }
+    .tag-adm { background: var(--color-admin-bg); color: var(--color-admin); border: 1px solid rgba(220, 38, 38, 0.3); }
+
+    /* Workflow Nav Tabs */
+    .flow-tabs-nav {
+      display: flex; gap: 0.6rem; overflow-x: auto; padding-bottom: 0.5rem;
+      margin-bottom: 2rem;
+    }
+    .flow-tab-btn {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      font-family: inherit; font-size: 0.85rem; font-weight: 700;
+      padding: 0.75rem 1.25rem; border-radius: var(--radius-md);
+      cursor: pointer; transition: all 0.2s; white-space: nowrap;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .flow-tab-btn:hover { border-color: #4f46e5; color: #4f46e5; background: var(--color-frontend-bg); }
+    .flow-tab-btn.active {
+      background: #4f46e5; color: #ffffff; border-color: #4f46e5;
+      box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);
+    }
+
+    /* Workflow Cards & Sections */
+    .flow-section {
+      display: none;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 2.5rem;
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 3rem;
+    }
+    .flow-section.active { display: block; animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+    .flow-header {
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 1.5rem; margin-bottom: 2rem;
+      display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 1rem;
+    }
+    .flow-title { font-size: 1.6rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.4rem; }
+    .flow-subtitle { font-size: 0.95rem; color: var(--text-muted); }
+
+    /* Visual Flow Pipeline (Horizontal & Vertical Direction Cards) */
+    .pipeline-grid {
+      display: flex; flex-direction: column; gap: 1.5rem;
+      position: relative; margin-bottom: 2.5rem;
+    }
+
+    .pipeline-step {
+      display: grid; grid-template-columns: 80px 1fr;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      transition: all 0.2s;
+      box-shadow: var(--shadow-sm);
+      position: relative;
+    }
+    .pipeline-step:hover {
+      border-color: var(--border-accent);
+      transform: translateX(4px);
+      box-shadow: var(--shadow-md);
+    }
+    .step-indicator {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: var(--bg-surface-subtle);
+      border-right: 1px solid var(--border-color);
+      padding: 1rem 0.5rem;
+    }
+    .step-number { font-size: 1.1rem; font-weight: 800; color: #4f46e5; }
+    .step-arrow-down { font-size: 1.2rem; color: var(--text-subtle); margin-top: 4px; }
+
+    .step-body { padding: 1.5rem; }
+    .step-header-row {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem;
+    }
+    .step-title-text { font-size: 1.05rem; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 8px; }
+    .step-direction {
+      font-size: 0.75rem; font-weight: 700; font-family: 'JetBrains Mono', monospace;
+      padding: 4px 10px; border-radius: var(--radius-sm);
+    }
+    .step-desc { font-size: 0.9rem; color: var(--text-muted); line-height: 1.6; margin-bottom: 1rem; }
+
+    /* Code & Technical Details Box */
+    .tech-box {
+      background: #0f172a;
+      color: #f8fafc;
+      border-radius: var(--radius-sm);
+      padding: 1rem 1.25rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      line-height: 1.7;
+      overflow-x: auto;
+    }
+    .tech-box .keyword { color: #f472b6; font-weight: 600; }
+    .tech-box .string { color: #38bdf8; }
+    .tech-box .num { color: #facc15; }
+    .tech-box .comment { color: #64748b; font-style: italic; }
+    .tech-box .success { color: #4ade80; font-weight: 600; }
+
+    /* Direction Flow Arrow Bar */
+    .flow-connector {
+      display: flex; align-items: center; justify-content: center;
+      gap: 12px; padding: 0.5rem 0; color: #4f46e5; font-weight: 800;
+      font-size: 1.1rem;
+    }
+    .connector-line { flex: 1; height: 2px; background: #cbd5e1; }
+    .connector-badge {
+      background: var(--color-frontend-bg); color: #4f46e5;
+      padding: 4px 12px; border-radius: 20px; font-size: 0.75rem;
+      font-weight: 700; font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Swimlane Summary Table */
+    .swimlane-table {
+      width: 100%; border-collapse: collapse; margin-top: 1.5rem;
+      font-size: 0.85rem; border: 1px solid var(--border-color);
+      border-radius: var(--radius-md); overflow: hidden;
+    }
+    .swimlane-table th {
+      background: var(--bg-surface-subtle); color: var(--text-main);
+      padding: 0.75rem 1rem; text-align: left; font-weight: 700;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .swimlane-table td {
+      padding: 0.75rem 1rem; border-bottom: 1px solid var(--border-color);
+      color: var(--text-muted); vertical-align: top;
+    }
+    .swimlane-table tr:last-child td { border-bottom: none; }
+    .swimlane-table tr:hover td { background: var(--bg-surface-subtle); }
+
+    /* Alert Boxes */
+    .info-callout {
+      background: var(--color-frontend-bg); border-left: 4px solid #4f46e5;
+      border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      padding: 1rem 1.25rem; font-size: 0.88rem; color: #3730a3;
+      margin-top: 1.5rem;
+    }
+    .success-callout {
+      background: var(--color-backend-bg); border-left: 4px solid #059669;
+      border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      padding: 1rem 1.25rem; font-size: 0.88rem; color: #065f46;
+      margin-top: 1.5rem;
+    }
+    .warn-callout {
+      background: var(--color-admin-bg); border-left: 4px solid #dc2626;
+      border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      padding: 1rem 1.25rem; font-size: 0.88rem; color: #991b1b;
+      margin-top: 1.5rem;
+    }
+
+    footer {
+      text-align: center; padding: 3rem 2rem; color: var(--text-muted);
+      font-size: 0.85rem; border-top: 1px solid var(--border-color);
+      background: var(--bg-surface);
+    }
+
+    @media (max-width: 768px) {
+      .pipeline-step { grid-template-columns: 1fr; }
+      .step-indicator { flex-direction: row; justify-content: flex-start; padding: 0.5rem 1rem; gap: 8px; border-right: none; border-bottom: 1px solid var(--border-color); }
+      .step-arrow-down { transform: rotate(-90deg); margin-top: 0; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="brand-logo">
+    <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
+      <rect width="28" height="28" rx="8" fill="#4f46e5"/>
+      <path d="M8 14.5L12.5 19L20 10" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    Picky Workflows
+  </div>
+  <ul class="nav-links">
+    <li><a href="javascript:void(0)" class="nav-link-btn active" onclick="switchFlow('auth')">1. WhatsApp OTP Auth</a></li>
+    <li><a href="javascript:void(0)" class="nav-link-btn" onclick="switchFlow('cart-sync')">2. Guest Cart Sync</a></li>
+    <li><a href="javascript:void(0)" class="nav-link-btn" onclick="switchFlow('razorpay')">3. 100% Razorpay Prepaid</a></li>
+    <li><a href="javascript:void(0)" class="nav-link-btn" onclick="switchFlow('tracking')">4. 4-Stage Tracking</a></li>
+    <li><a href="javascript:void(0)" class="nav-link-btn" onclick="switchFlow('cancel')">5. Admin Cancellation</a></li>
+    <li><a href="javascript:void(0)" class="nav-link-btn" onclick="switchFlow('products')">6. Product &amp; Media</a></li>
+    <li><a href="javascript:void(0)" class="nav-link-btn" onclick="switchFlow('rbac')">7. Security &amp; RBAC</a></li>
+  </ul>
+  <a href="Architecture.html" class="nav-link-arch">&larr; System Architecture</a>
+</header>
+
+<div class="app-container">
+
+  <!-- PAGE HEADER -->
+  <div class="page-header">
+    <div class="pill-badge">&#128260; Complete Visual Execution Pathways</div>
+    <h1 class="page-title">Picky System Workflows &amp; Directions</h1>
+    <p class="page-desc">Step-by-step visual blueprints showing communication directions between Customer, Frontend, Express Server, MongoDB Atlas, Redis, WATI WhatsApp, and Razorpay.</p>
+  </div>
+
+  <!-- ENTITY IDENTITY LEGEND -->
+  <div class="legend-bar">
+    <span class="legend-title">Entity Key:</span>
+    <div class="legend-item"><span class="legend-tag tag-cust">&#128100; Customer / User</span></div>
+    <div class="legend-item"><span class="legend-tag tag-front">&#127760; picky_client (React)</span></div>
+    <div class="legend-item"><span class="legend-tag tag-back">&#9889; picky-server (Express API)</span></div>
+    <div class="legend-item"><span class="legend-tag tag-db">&#127811; MongoDB &amp; Redis</span></div>
+    <div class="legend-item"><span class="legend-tag tag-wati">&#128242; WATI WhatsApp API</span></div>
+    <div class="legend-item"><span class="legend-tag tag-rzp">&#128179; Razorpay Gateway</span></div>
+    <div class="legend-item"><span class="legend-tag tag-adm">&#128081; Admin Portal</span></div>
+  </div>
+
+  <!-- FLOW 1: WHATSAPP OTP AUTH -->
+  <section id="flow-auth" class="flow-section active">
+    <div class="flow-header">
+      <div>
+        <h2 class="flow-title">1. Customer WhatsApp OTP Authentication &amp; JWT Session</h2>
+        <p class="flow-subtitle">Passwordless login using official WATI WhatsApp REST API, Redis 5-minute TTL, and HTTP-only JWT cookies.</p>
+      </div>
+      <span class="legend-tag tag-wati">WATI API &bull; Zero Twilio</span>
+    </div>
+
+    <div class="pipeline-grid">
+      <!-- Step 1 -->
+      <div class="pipeline-step">
+        <div class="step-indicator">
+          <div class="step-number">01</div>
+          <div class="step-arrow-down">&#8595;</div>
+        </div>
+        <div class="step-body">
+          <div class="step-header-row">
+            <div class="step-title-text">&#128100; Customer Inputs 10-Digit Mobile Number</div>
+            <span class="step-direction tag-front">Customer &rarr; picky_client</span>
+          </div>
+          <p class="step-desc">User enters their phone number (e.g. <code>9876543210</code>) on the Login/Register modal. Client performs regex validation.</p>
+        </div>
+      </div>
+
+      <!-- Connector -->
+      <div class="flow-connector">
+        <div class="connector-line"></div>
+        <div class="connector-badge">POST /api/v1/auth/send-otp &rarr;</div>
+        <div class="connector-line"></div>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="pipeline-step">
+        <div class="step-indicator">
+          <div class="step-number">02</div>
+          <div class="step-arrow-down">&#8595;</div>
+        </div>
+        <div class="step-body">
+          <div class="step-header-row">
+            <div class="step-title-text">&#9889; Server Generates 6-Digit Secure OTP &amp; Stores in Redis</div>
+            <span class="step-direction tag-back">picky-server &rarr; Redis Cache</span>
+          </div>
+          <p class="step-desc">Express server crypto-generates a 6-digit random code and saves it to Redis key <code>otp:919876543210</code> with a 300-second (5-minute) TTL.</p>
+          <div class="tech-box">
+            <span class="keyword">await</span> redis.set(<span class="string">`otp:91${phone}`</span>, otp, <span class="string">'EX'</span>, <span class="num">300</span>);
+          </div>
+        </div>
+      </div>
+
+      <!-- Connector -->
+      <div class="flow-connector">
+        <div class="connector-line"></div>
+        <div class="connector-badge">POST https://wati-server/api/v1/sendSessionMessage &rarr;</div>
+        <div class="connector-line"></div>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="pipeline-step">
+        <div class="step-indicator">
+          <div class="step-number">03</div>
+          <div class="step-arrow-down">&#8595;</div>
+        </div>
+        <div class="step-body">
+          <div class="step-header-row">
+            <div class="step-title-text">&#128242; WATI Dispatches WhatsApp Message to Customer</div>
+            <span class="step-direction tag-wati">WATI API &rarr; Customer WhatsApp</span>
+          </div>
+          <p class="step-desc">WATI sends an instant WhatsApp message to the customer: <em>"Your Picky OTP is: 849201. Valid for 5 minutes. Do not share with anyone."</em></p>
+        </div>
+      </div>
+
+      <!-- Connector -->
+      <div class="flow-connector">
+        <div class="connector-line"></div>
+        <div class="connector-badge">POST /api/v1/auth/verify-otp &rarr;</div>
+        <div class="connector-line"></div>
+      </div>
+
+      <!-- Step 4 -->
+      <div class="pipeline-step">
+        <div class="step-indicator">
+          <div class="step-number">04</div>
+          <div class="step-arrow-down">&#10004;</div>
+        </div>
+        <div class="step-body">
+          <div class="step-header-row">
+            <div class="step-title-text">&#127881; Server Verifies OTP, Upserts User in MongoDB &amp; Signs JWT</div>
+            <span class="step-direction tag-back">picky-server &rarr; MongoDB &rarr; picky_client</span>
+          </div>
+          <p class="step-desc">If code matches Redis store: User is created or updated in MongoDB Atlas. Server sets <code>accessToken</code> in response and <code>refreshToken</code> in HttpOnly cookie.</p>
+          <div class="tech-box">
+            { <span class="keyword">"success"</span>: <span class="num">true</span>, <span class="keyword">"user"</span>: { <span class="string">"_id"</span>: <span class="string">"66d8..."</span>, <span class="string">"phone"</span>: <span class="string">"+919876543210"</span>, <span class="string">"role"</span>: <span class="string">"customer"</span> }, <span class="keyword">"accessToken"</span>: <span class="string">"eyJhbGci..."</span> }
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="success-callout">
+      &#10004; <strong>Zero Twilio Dependency:</strong> System uses official WATI REST API exclusively. When local test keys are present, the terminal cleanly outputs the OTP box for fast offline testing.
+    </div>
+  </section>
+
+  <!-- FLOW 2: GUEST CART SYNC -->
+  <section id="flow-cart-sync" class="flow-section">
+    <div class="flow-header">
+      <div>
+        <h2 class="flow-title">2. Guest to Authenticated Cart &amp; Wishlist Sync</h2>
+        <p class="flow-subtitle">Seamless browser LocalStorage persistence that automatically merges into MongoDB Atlas upon login.</p>
+      </div>
+      <span class="legend-tag tag-front">Zustand &bull; LocalStorage Sync</span>
+    </div>
+
+    <div class="pipeline-grid">
+      <div class="pipeline-step">
+        <div class="step-indicator"><div class="step-number">01</div><div class="step-arrow-down">&#8595;</div></div>
+        <div class="step-body">
+          <div class="step-header-row">
+            <div class="step-title-text">&#128722; Guest User Browses &amp; Adds Items to Cart</div>
+            <span class="step-direction tag-front">picky_client (LocalStorage)</span>
+          </div>
+          <p class="step-desc">Unauthenticated user adds products to cart or wishlist. Zustand store saves the list directly to browser <code>localStorage.getItem('picky_guest_cart')</code>.</p>
+        </div>
+      </div>
+
+      <div class="flow-connector"><div class="connector-line"></div><div class="connector-badge">User Logins via WhatsApp OTP &rarr;</div><div class="connector-line"></div></div>
+
+      <div class="pipeline-step">
+        <div class="step-indicator"><div class="step-number">02</div><div class="step-arrow-down">&#8595;</div></div>
+        <div class="step-body">
+          <div class="step-header-row">
+            <div class="step-title-text">&#9889; Frontend Dispatches Auto-Merge Payload</div>
+            <span class="step-direction tag-front">picky_client &rarr; POST /api/v1/cart/merge</span>
+          </div>
+          <p class="step-desc">Immediately upon receiving the JWT token, frontend extracts guest cart items and dispatches an atomic merge request to the backend.</p>
+        </div>
+      </div>
+
+      <div class="flow-connector"><div class="connector-line"></div><div class="connector-badge">MongoDB Document Update &rarr;</div><div class="connector-line"></div></div>
+
+      <div class="pipeline-step">
+        <div class="step-indicator"><div class="step-number">03</div><div class="step-arrow-down">&#10004;</div></div>
+        <div class="step-body">
+          <div class="step-header-row">
+            <div class="step-title-text">&#127811; MongoDB Merges Quantities &amp; Clears LocalStorage</div>
+            <span class="step-direction tag-db">MongoDB Atlas &rarr; picky_client</span>
+          </div>
+          <p class="step-desc">MongoDB combines existing cart items with the guest items, preventing duplication. LocalStorage is wiped and the user sees their full synced cart.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FLOW 3: 100% RAZORPAY PREPAID -->
+  <section id="flow-razorpay" class="flow-section">
+    <div class="flow-header">
+      <div>
+        <h2 class="flow-title">3. 100% Razorpay Prepaid Checkout &amp; Atomic Stock Deduction</h2>
+        <p class="flow-subtitle">Zero COD. All orders are 100% prepaid online with dynamic backend price verification and HMAC-SHA256 signature validation.</p>
+      </div>
+      <span class="legend-tag tag-rzp">100% Online &bull; Zero COD</span>
+    </div>
+
+    <div class="pipeline-grid">
+      <div class="pipeline-step">
+        <div class="step-indicator"><div class="step-number">01</div><div class="step-arrow-down">&#8595;</div></div>
+        <div class="step-body">
+          <div class="step-header-row">
+            <div class="step-title-text">&#128722; Customer Clicks "Proceed to Pay" at Checkout</div>
+            <span class="step-direction tag-front">picky_client &rarr; POST /api/v1/orders/razorpay/create-order</span>
+          </div>
+          <p class="step-desc">Client passes item IDs, quantities, address, and coupon code. <em>No price from the client is trusted.</em></p>
+        </div>
+      </div>
+
+      <div class="flow-connector"><div class="connector-line"></div><div class="connector-badge">Dynamic DB Price &amp; Stock Check &rarr;</div><div class="connector-line"></div></div>
+
+      <div class="pipeline-step">
+        <div class="step-indicator"><div class="step-number">02</div><div class="step-arrow-down">&#8595;</div></div>
+        <div class="step-body">
+          <div class="step-header-row">
+            <div class="step-title-text">&#9889; Server Calculates True Price &amp; Creates Razorpay Order</div>
+            <span class="step-direction tag-back">picky-server &rarr; Razorpay API</span>
+          </div>
+          <p class="step-desc">Server queries MongoDB <code>Product.findById</code> for active stock and real price, applies valid coupon, and calls Razorpay API to generate <code>order_id</code>.</p>
+          <div class="tech-box">
+            <span class="keyword">const</span> rzpOrder = <span class="keyword">await</span> razorpay.orders.create({
+              <span class="keyword">amount</span>: calculatedTotal * <span class="num">100</span>, <span class="comment">// in paise</span>
+              <span class="keyword">currency</span>: <span class="string">'INR'</span>,
+              <span class="keyword">receipt</span>: <span class="string">`rcpt_${Date.now()}`</span>
+            });
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-connector"><div class="connector-line"></div><div class="connector-badge">Razorpay Standard Popup Modal &rarr;</div><div class="connector-line"></div></div>
+
+      <div class="pipeline-step">
+        <div class="step-indicator"><div class="step-number">03</div><div class="step-arrow-down">&#8595;</div></div>
+        <div class="step-body">
+          <div class="step-header-row">
+            <div class="step-title-text">&#128179; Customer Pays via UPI / GPay / PhonePe / Card / NetBanking</div>
+            <span class="step-direction tag-rzp">Customer &rarr; Razorpay Modal</span>
+          </div>
+          <p class="step-desc">Customer completes payment in Razorpay modal. Razorpay returns <code>razorpay_payment_id</code>, <code>razorpay_order_id</code>, and <code>razorpay_signature</code>.</p>
+        </div>
+      </div>
+
+      <div class="flow-connector"><div class="connector-line"></div><div class="connector-badge">POST /api/v1/orders/razorpay/verify &rarr;</div><div class="connector-line"></div></div>
+
+      <div class="pipeline-step">
+        <div class="step-indicator"><div class="step-number">04</div><div class="step-arrow-down">&#10004;</div></div>
+        <div class="step-body">
+          <div class="step-header-row">
+            <div class="step-title-text">&#128272; HMAC-SHA256 Signature Verification &amp; Atomic Stock Deduction</div>
+            <span class="step-direction tag-back">picky-server &rarr; MongoDB &rarr; WATI Alert</span>
+          </div>
+          <p class="step-desc">Backend verifies the crypto signature. Upon match:
+            <ol style="margin-left:1.5rem;margin-top:.5rem;line-height:1.8;">
+              <li>Atomic stock deduction via <code>Product.findByIdAndUpdate(..., { $inc: { stock: -qty } })</code></li>
+              <li>Order saved in MongoDB Atlas with status <code>'confirmed'</code> and <code>paymentStatus: 'paid'</code>.</li>
+              <li>WATI WhatsApp Order Confirmation notification dispatched instantly to customer's phone!</li>
+            </ol>
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-callout">
+      <strong>Zero COD Guarantee:</strong> Because all orders require successful Razorpay cryptographic verification, the store eliminates fake COD orders, RTO losses, and unpaid deliveries completely.
+    </div>
+  </section>
+
+  <!-- FLOW 4: 4-STAGE TRACKING -->
+  <section id="flow-tracking" class="flow-section">
+    <div class="flow-header">
+      <div>
+        <h2 class="flow-title">4. Admin-Driven 4-Stage Order Tracking &amp; AWB Dispatch</h2>
+        <p class="flow-subtitle">Store-controlled order status progression with automated WATI WhatsApp alerts and zero third-party courier API dependencies.</p>
+      </div>
+      <span class="legend-tag tag-adm">4-Stage Progress &bull; WATI Alerts</span>
+    </div>
+
+    <div class="pipeline-grid">
+      <div class="pipeline-step">
+        <div class="step-indicator"><div class="step-number">01</div><div class="step-arrow-down">&#8595;</div></div>
+        <div class="step-body">
+          <div class="step-header-row">
+            <div class="step-title-text">&#128179; Stage 1: Order Confirmed &amp; Paid</div>
+            <span class="step-direction tag-back">System Trigger</span>
+          </div>
+          <p class="step-desc">Automatically set upon successful Razorpay payment verification. WATI sends confirmation message.</p>
+        </div>
+      </div>
+
+      <div class="pipeline-step">
+        <div class="step-indicator"><div class="step-number">02</div><div class="step-arrow-down">&#8595;</div></div>
+        <div class="step-body">
+          <div class="step-header-row">
+            <div class="step-title-text">&#128230; Stage 2: Admin Enters AWB &amp; Marks "Dispatched &amp; Shipped"</div>
+            <span class="step-direction tag-adm">Admin Portal &rarr; PATCH /api/v1/admin/orders/:id/status</span>
+          </div>
+          <p class="step-desc">Admin packs the order, books courier (e.g. BlueDart / Delhivery), and inputs the AWB tracking number in <code>/pickyadmin-softnova2026/orders/:id</code>.</p>
+          <div class="tech-box">
+            <span class="comment">// WATI Dispatches WhatsApp Alert:</span>
+            <span class="string">"Order #PKY-89421 shipped! Courier: BlueDart. AWB: BD-8492049102. Track live on Picky."</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="pipeline-step">
+        <div class="step-indicator"><div class="step-number">03</div><div class="step-arrow-down">&#8595;</div></div>
+        <div class="step-body">
+          <div class="step-header-row">
+            <div class="step-title-text">&#128666; Stage 3: Admin Updates Status to "Out for Delivery"</div>
+            <span class="step-direction tag-adm">Admin Portal &rarr; MongoDB</span>
+          </div>
+          <p class="step-desc">Customer's live order page updates in real-time via TanStack Query polling.</p>
+        </div>
+      </div>
+
+      <div class="pipeline-step">
+        <div class="step-indicator"><div class="step-number">04</div><div class="step-arrow-down">&#10004;</div></div>
+        <div class="step-body">
+          <div class="step-header-row">
+            <div class="step-title-text">&#127881; Stage 4: Delivered &amp; Completed</div>
+            <span class="step-direction tag-adm">Admin &rarr; WATI Alert &rarr; Customer</span>
+          </div>
+          <p class="step-desc">Admin marks delivered. Final WATI WhatsApp celebration message sent: <em>"Your Picky order #PKY-89421 has been delivered! Thank you for shopping with Picky! 🎉"</em></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FLOW 5: ADMIN CANCELLATION -->
+  <section id="flow-cancel" class="flow-section">
+    <div class="flow-header">
+      <div>
+        <h2 class="flow-title">5. Strict Admin-Only Order Cancellation &amp; Stock Restoration</h2>
+        <p class="flow-subtitle">Customers cannot cancel confirmed prepaid orders. Only the Admin can cancel orders, which automatically restores inventory stock in MongoDB Atlas.</p>
+      </div>
+      <span class="legend-tag tag-adm">Admin-Only &bull; Atomic Stock Restore</span>
+    </div>
+
+    <div class="pipeline-grid">
+      <div class="pipeline-step">
+        <div class="step-indicator"><div class="step-number">01</div><div class="step-arrow-down">&#8595;</div></div>
+        <div class="step-body">
+          <div class="step-header-row">
+            <div class="step-title-text">&#128100; Customer Sees "Contact Support" on Confirmed Order</div>
+            <span class="step-direction tag-front">picky_client UI Protection</span>
+          </div>
+          <p class="step-desc">The client interface has no self-cancellation button for confirmed orders. The customer contacts store support via WhatsApp or email.</p>
+        </div>
+      </div>
+
+      <div class="pipeline-step">
+        <div class="step-indicator"><div class="step-number">02</div><div class="step-arrow-down">&#8595;</div></div>
+        <div class="step-body">
+          <div class="step-header-row">
+            <div class="step-title-text">&#128081; Admin Opens Order in Admin Portal &amp; Clicks "Cancel Order"</div>
+            <span class="step-direction tag-adm">/pickyadmin-softnova2026 &rarr; PATCH /api/v1/admin/orders/:id/status</span>
+          </div>
+          <p class="step-desc">Admin reviews the request and clicks Cancel in the admin order management panel.</p>
+        </div>
+      </div>
+
+      <div class="pipeline-step">
+        <div class="step-indicator"><div class="step-number">03</div><div class="step-arrow-down">&#10004;</div></div>
+        <div class="step-body">
+          <div class="step-header-row">
+            <div class="step-title-text">&#127811; Backend Sets Status `cancelled` &amp; Restores MongoDB Inventory Stock</div>
+            <span class="step-direction tag-back">picky-server &rarr; MongoDB Atomic `$inc`</span>
+          </div>
+          <p class="step-desc">Backend iterates over all items in the order and executes an atomic MongoDB increment to restore product stock quantity back to inventory.</p>
+          <div class="tech-box">
+            <span class="keyword">for</span> (<span class="keyword">const</span> item <span class="keyword">of</span> order.items) {
+              <span class="keyword">await</span> Product.findByIdAndUpdate(item.product, {
+                <span class="keyword">$inc</span>: { stock: item.quantity } <span class="comment">// Inventory stock restored</span>
+              });
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="warn-callout">
+      <strong>Refund Handling:</strong> Once cancelled by Admin, the Razorpay payment ID is marked for refund processing directly through the Razorpay Dashboard or automated refund API.
+    </div>
+  </section>
+
+  <!-- FLOW 6: PRODUCT & MEDIA -->
+  <section id="flow-products" class="flow-section">
+    <div class="flow-header">
+      <div>
+        <h2 class="flow-title">6. Product Catalog &amp; Media Asset Management</h2>
+        <p class="flow-subtitle">Admin product creation, image CDN pipeline, and instant live catalog indexing.</p>
+      </div>
+      <span class="legend-tag tag-adm">Admin CRUD &bull; Clean Slate</span>
+    </div>
+
+    <div class="pipeline-grid">
+      <div class="pipeline-step">
+        <div class="step-indicator"><div class="step-number">01</div><div class="step-arrow-down">&#8595;</div></div>
+        <div class="step-body">
+          <div class="step-header-row">
+            <div class="step-title-text">&#128230; Admin Creates Product &amp; Uploads Image</div>
+            <span class="step-direction tag-adm">Admin Portal &rarr; POST /api/v1/admin/products</span>
+          </div>
+          <p class="step-desc">Admin uploads product images and provides price, SKU, category, and initial stock level.</p>
+        </div>
+      </div>
+
+      <div class="pipeline-step">
+        <div class="step-indicator"><div class="step-number">02</div><div class="step-arrow-down">&#8595;</div></div>
+        <div class="step-body">
+          <div class="step-header-row">
+            <div class="step-title-text">&#9729; Multer &amp; Sharp Process Image &rarr; Cloud CDN / S3</div>
+            <span class="step-direction tag-back">picky-server &rarr; Cloudinary / S3 CDN</span>
+          </div>
+          <p class="step-desc">Image is compressed, resized to WebP, and stored to cloud CDN. Secure HTTPS CDN URL is returned.</p>
+        </div>
+      </div>
+
+      <div class="pipeline-step">
+        <div class="step-indicator"><div class="step-number">03</div><div class="step-arrow-down">&#10004;</div></div>
+        <div class="step-body">
+          <div class="step-header-row">
+            <div class="step-title-text">&#127811; Document Saved to MongoDB Atlas &amp; Live in Customer Catalog</div>
+            <span class="step-direction tag-db">MongoDB Atlas &rarr; Customer Browsing</span>
+          </div>
+          <p class="step-desc">Product is indexed with text search and immediately available on the customer store without any server restart.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FLOW 7: SECURITY & RBAC -->
+  <section id="flow-rbac" class="flow-section">
+    <div class="flow-header">
+      <div>
+        <h2 class="flow-title">7. Role-Based Access Control &amp; Protected Route Security</h2>
+        <p class="flow-subtitle">Three-tier access model ensuring customer data privacy and dedicated Root Administrator controls.</p>
+      </div>
+      <span class="legend-tag tag-adm">bcrypt &bull; JWT Guard</span>
+    </div>
+
+    <table class="swimlane-table">
+      <thead>
+        <tr>
+          <th>Role / Entity</th>
+          <th>Authentication Method</th>
+          <th>Allowed Capabilities</th>
+          <th>Protected URL Routes</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="legend-tag tag-cust">Public / Guest</span></td>
+          <td>None (Public)</td>
+          <td>Browse catalog, view products, add to local cart/wishlist</td>
+          <td><code>/</code>, <code>/products</code>, <code>/product/:id</code></td>
+        </tr>
+        <tr>
+          <td><span class="legend-tag tag-front">Customer</span></td>
+          <td>WATI WhatsApp OTP &rarr; Bearer JWT</td>
+          <td>Razorpay checkout, manage profile/addresses, 4-stage tracking</td>
+          <td><code>/checkout</code>, <code>/account</code>, <code>/orders/:id</code></td>
+        </tr>
+        <tr>
+          <td><span class="legend-tag tag-adm">Root Admin</span></td>
+          <td>Email + bcrypt Password &rarr; Admin JWT</td>
+          <td>Dispatch orders, enter AWB, cancel orders, add products, view analytics</td>
+          <td><code>/pickyadmin-softnova2026/*</code></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="info-callout" style="margin-top:2rem;">
+      <strong>Root Admin Default Credentials:</strong>
+      <ul style="margin-top:.5rem;margin-left:1.5rem;line-height:1.8;">
+        <li>URL: <a href="http://localhost:3000/pickyadmin-softnova2026" target="_blank">http://localhost:3000/pickyadmin-softnova2026</a></li>
+        <li>Email: <code>admin@picky.com</code></li>
+        <li>Password: <code>Admin@Picky2026!</code></li>
+      </ul>
+    </div>
+  </section>
+
+</div>
+
+<footer>
+  <p>Picky E-Commerce &copy; 2026. Production Workflow Reference Guide.</p>
+  <p style="margin-top:0.5rem;"><a href="Architecture.html" style="color:#4f46e5;font-weight:700;text-decoration:none;">View Dark-Theme System Architecture &rarr;</a></p>
+</footer>
+
+<script>
+  function switchFlow(flowId) {
+    // Hide all sections
+    document.querySelectorAll('.flow-section').forEach(el => el.classList.remove('active'));
+    // Deactivate all nav buttons
+    document.querySelectorAll('.nav-link-btn').forEach(el => el.classList.remove('active'));
+
+    // Show target section
+    const targetSection = document.getElementById('flow-' + flowId);
+    if (targetSection) targetSection.classList.add('active');
+
+    // Activate clicked nav button
+    const buttons = document.querySelectorAll('.nav-link-btn');
+    buttons.forEach(btn => {
+      if (btn.getAttribute('onclick') && btn.getAttribute('onclick').includes(flowId)) {
+        btn.classList.add('active');
+      }
+    });
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+</script>
+
+</body>
+</html>

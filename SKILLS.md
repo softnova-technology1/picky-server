@@ -354,24 +354,25 @@ Side effects:
   - WhatsApp sent to customer with AWB number
 ```
 
-### WhatsApp Message Templates (Twilio)
+### WhatsApp Message Templates (WATI API)
 
 ```
 OTP:
-"Your Picky OTP is: {{otp}}. Valid for 5 minutes. Do not share."
+"Your Picky OTP is: {{otp}}. Valid for 5 minutes. Do not share with anyone."
 
 Order Confirmed:
 "Hi {{name}}! Your Picky order #{{orderNumber}} is confirmed!
-Total: Rs.{{amount}}. We'll notify when shipped."
+Total: Rs.{{amount}}. Payment: 100% Paid (Razorpay). We'll notify when it's dispatched."
 
 Order Shipped:
-"Order #{{orderNumber}} shipped!
+"Order #{{orderNumber}} has been dispatched & shipped!
 Courier: {{courier}}
-AWB: {{trackingId}}"
+AWB: {{trackingId}}
+Track live on your Picky account."
 
 Order Delivered:
-"Picky order #{{orderNumber}} delivered!
-Thank you for shopping with us!"
+"Your Picky order #{{orderNumber}} has been delivered!
+Thank you for shopping with us at Picky! 🎉"
 ```
 
 ---
@@ -446,9 +447,10 @@ JWT_ACCESS_SECRET=your-super-secret-access-key-min-32-chars
 JWT_REFRESH_SECRET=your-super-secret-refresh-key-min-32-chars
 JWT_ACCESS_EXPIRES=15m
 JWT_REFRESH_EXPIRES=7d
-TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-TWILIO_AUTH_TOKEN=your_auth_token
-TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
+RAZORPAY_KEY_ID=rzp_test_your_key_id
+RAZORPAY_KEY_SECRET=your_razorpay_key_secret
+WATI_API_ENDPOINT=https://live-server-XXXX.wati.io
+WATI_ACCESS_TOKEN=your_wati_access_token
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_api_key
 CLOUDINARY_API_SECRET=your_api_secret

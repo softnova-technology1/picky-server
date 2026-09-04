@@ -1,36 +1,45 @@
 const OrderService = require('./order.service');
 const { ApiResponse } = require('../../utils/apiResponse');
 
-// Customer
-const checkout = async (req, res, next) => {
+const getUserId = (req) => req.user?._id || req.user?.id;
+
+// Customer Razorpay Flow
+const createRazorpayOrder = async (req, res, next) => {
   try {
-    const order = await OrderService.checkout(req.user, req.body);
-    return res.status(201).json(ApiResponse.success(order, 'Order placed successfully'));
+    const result = await OrderService.createRazorpayOrder(req.user, req.body);
+    return res.json(ApiResponse.success(result, 'Razorpay order initialized'));
+  } catch (err) { next(err); }
+};
+
+const verifyRazorpayOrder = async (req, res, next) => {
+  try {
+    const order = await OrderService.verifyAndCreateOrder(req.user, req.body);
+    return res.status(201).json(ApiResponse.success(order, 'Payment verified and order placed successfully'));
   } catch (err) { next(err); }
 };
 
 const myOrders = async (req, res, next) => {
   try {
-    const result = await OrderService.myOrders(req.user.id, req.query);
+    const result = await OrderService.myOrders(getUserId(req), req.query);
     return res.json(ApiResponse.paginated(result.data, result.pagination));
   } catch (err) { next(err); }
 };
 
 const orderDetail = async (req, res, next) => {
   try {
-    const order = await OrderService.getDetail(req.params.id, req.user.id);
+    const order = await OrderService.getDetail(req.params.id, getUserId(req));
     return res.json(ApiResponse.success(order));
   } catch (err) { next(err); }
 };
 
 const getTracking = async (req, res, next) => {
   try {
-    const tracking = await OrderService.getTracking(req.params.id, req.user.id);
+    const tracking = await OrderService.getTracking(req.params.id, getUserId(req));
     return res.json(ApiResponse.success(tracking));
   } catch (err) { next(err); }
 };
 
-// Admin
+// Admin Management
 const adminListOrders = async (req, res, next) => {
   try {
     const result = await OrderService.adminListOrders(req.query);
@@ -59,4 +68,14 @@ const updateStatus = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { checkout, myOrders, orderDetail, getTracking, adminListOrders, adminOrderDetail, addTracking, updateStatus };
+module.exports = {
+  createRazorpayOrder,
+  verifyRazorpayOrder,
+  myOrders,
+  orderDetail,
+  getTracking,
+  adminListOrders,
+  adminOrderDetail,
+  addTracking,
+  updateStatus,
+};

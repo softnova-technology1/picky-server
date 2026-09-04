@@ -4,7 +4,7 @@ const statusHistorySchema = new mongoose.Schema(
   {
     status: {
       type: String,
-      enum: ['confirmed', 'shipped', 'delivered', 'cancelled'],
+      enum: ['confirmed', 'shipped', 'out_for_delivery', 'delivered', 'cancelled'],
       required: true,
     },
     timestamp: { type: Date, default: Date.now },
@@ -44,7 +44,17 @@ const orderSchema = new mongoose.Schema(
     subtotal: { type: Number, required: true },
     discountAmount: { type: Number, default: 0 },
     total: { type: Number, required: true },
-    paymentMethod: { type: String, enum: ['cod'], default: 'cod' },
+
+    // Payment (100% Prepaid Razorpay)
+    paymentMethod: { type: String, enum: ['razorpay'], default: 'razorpay' },
+    paymentStatus: {
+      type: String,
+      enum: ['paid', 'pending', 'failed', 'refunded'],
+      default: 'paid',
+    },
+    razorpayOrderId: { type: String, default: null },
+    razorpayPaymentId: { type: String, default: null },
+    razorpaySignature: { type: String, default: null },
 
     // Coupon / Discount
     coupon: { type: mongoose.Schema.Types.ObjectId, ref: 'Coupon', default: null },
@@ -54,17 +64,17 @@ const orderSchema = new mongoose.Schema(
       default: null,
     }, // 'first_order' is INTERNAL — never expose to customer
 
-    // Order Status
+    // Order Status (Admin-Driven Workflow)
     status: {
       type: String,
-      enum: ['confirmed', 'shipped', 'delivered', 'cancelled'],
+      enum: ['confirmed', 'shipped', 'out_for_delivery', 'delivered', 'cancelled'],
       default: 'confirmed',
     },
     statusHistory: [statusHistorySchema], // push on every status change
 
     // Tracking (set when admin ships the order)
-    trackingId: { type: String, default: null },  // AWB number
-    courier: { type: String, default: null },      // courier company name
+    trackingId: { type: String, default: null },  // AWB number (optional reference)
+    courier: { type: String, default: null },      // courier partner name
   },
   { timestamps: true }
 );

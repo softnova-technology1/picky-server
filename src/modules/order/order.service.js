@@ -1,4 +1,3 @@
-// TODO (Dev 4): Implement order business logic
 const AppError = require('../../utils/appError');
 const OrderRepo = require('./order.repository');
 const CartRepo = require('../cart/cart.repository');
@@ -7,6 +6,7 @@ const CouponUsage = require('../../models/couponUsage.model');
 const Coupon = require('../../models/coupon.model');
 const User = require('../../models/user.model');
 const NotificationService = require('../../services/notification.service');
+const RazorpayService = require('../../services/razorpay.service');
 const paginate = require('../../utils/paginate');
 const mongoose = require('mongoose');
 
@@ -16,51 +16,108 @@ const generateOrderNumber = () => {
   return `PKY-${date}-${rand}`;
 };
 
+const calculateCartPricing = async (user, cart) => {
+  const subtotal = cart.items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  let discountAmount = cart.couponDiscount || 0;
+  let discountType = null;
+
+  // First-order gift check (SILENT — internal only)
+  if (user.orderCount === 0 && !cart.coupon) {
+    const Discount = require('../../models/discount.model');
+    const now = new Date();
+    const firstOrderDiscount = await Discount.findOne({
+      appliesTo: 'first_order',
+      isActive: true,
+      $or: [{ startsAt: null }, { startsAt: { $lte: now } }],
+      $or: [{ endsAt: null }, { endsAt: { $gte: now } }],
+    }).lean();
+
+    if (firstOrderDiscount && subtotal >= (firstOrderDiscount.minOrderAmount || 0)) {
+      let fodAmount = firstOrderDiscount.type === 'percentage'
+        ? (subtotal * firstOrderDiscount.value) / 100
+        : firstOrderDiscount.value;
+      if (firstOrderDiscount.maxDiscountAmount) {
+        fodAmount = Math.min(fodAmount, firstOrderDiscount.maxDiscountAmount);
+      }
+      discountAmount = fodAmount;
+      discountType = 'first_order';
+    }
+  } else if (cart.coupon) {
+    discountType = 'coupon';
+  }
+
+  const total = Math.max(0, subtotal - discountAmount);
+  return { subtotal, discountAmount, discountType, total };
+};
+
 const OrderService = {
-  async checkout(user, { shippingAddress }) {
+  /**
+   * 1. Create Razorpay Order instance for Frontend Checkout Modal
+   */
+  async createRazorpayOrder(user, { shippingAddress }) {
     const cart = await CartRepo.findByUser(user._id);
     if (!cart || cart.items.length === 0) throw new AppError('Cart is empty', 400);
 
     // Validate stock for all items
     for (const item of cart.items) {
       const inv = await Inventory.findOne({ product: item.product });
-      if (!inv || inv.quantity < item.quantity)
-        throw new AppError(`Insufficient stock for ${item.name}`, 400);
-    }
-
-    // Calculate pricing
-    const subtotal = cart.items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-    let discountAmount = cart.couponDiscount || 0;
-    let discountType = null;
-
-    // First-order gift check (SILENT — internal only)
-    if (user.orderCount === 0 && !cart.coupon) {
-      const Discount = require('../../models/discount.model');
-      const now = new Date();
-      const firstOrderDiscount = await Discount.findOne({
-        appliesTo: 'first_order',
-        isActive: true,
-        $or: [{ startsAt: null }, { startsAt: { $lte: now } }],
-        $or: [{ endsAt: null }, { endsAt: { $gte: now } }],
-      }).lean();
-
-      if (firstOrderDiscount && subtotal >= (firstOrderDiscount.minOrderAmount || 0)) {
-        let fodAmount = firstOrderDiscount.type === 'percentage'
-          ? (subtotal * firstOrderDiscount.value) / 100
-          : firstOrderDiscount.value;
-        if (firstOrderDiscount.maxDiscountAmount) {
-          fodAmount = Math.min(fodAmount, firstOrderDiscount.maxDiscountAmount);
-        }
-        discountAmount = fodAmount;
-        discountType = 'first_order';
+      if (!inv || inv.quantity < item.quantity) {
+        throw new AppError(`Insufficient stock for "${item.name}"`, 400);
       }
-    } else if (cart.coupon) {
-      discountType = 'coupon';
     }
 
-    const total = Math.max(0, subtotal - discountAmount);
+    const { subtotal, discountAmount, total } = await calculateCartPricing(user, cart);
+    const receipt = generateOrderNumber();
 
-    // Deduct inventory
+    const rzOrder = await RazorpayService.createOrder({
+      amountInRupees: total,
+      receipt,
+      notes: {
+        userId: user._id.toString(),
+        phone: user.phone || '',
+      },
+    });
+
+    return {
+      razorpayOrderId: rzOrder.id,
+      amount: rzOrder.amount, // in paise
+      currency: rzOrder.currency,
+      keyId: rzOrder.keyId,
+      subtotal,
+      discountAmount,
+      total,
+    };
+  },
+
+  /**
+   * 2. Verify Razorpay Payment Signature and Create Order in DB
+   */
+  async verifyAndCreateOrder(user, { shippingAddress, razorpayOrderId, razorpayPaymentId, razorpaySignature }) {
+    const cart = await CartRepo.findByUser(user._id);
+    if (!cart || cart.items.length === 0) throw new AppError('Cart is empty', 400);
+
+    // Verify cryptographic signature
+    const isValid = RazorpayService.verifyPaymentSignature({
+      razorpayOrderId,
+      razorpayPaymentId,
+      razorpaySignature,
+    });
+
+    if (!isValid) {
+      throw new AppError('Payment signature verification failed. Please contact support if debited.', 400);
+    }
+
+    // Validate stock for all items
+    for (const item of cart.items) {
+      const inv = await Inventory.findOne({ product: item.product });
+      if (!inv || inv.quantity < item.quantity) {
+        throw new AppError(`Insufficient stock for "${item.name}"`, 400);
+      }
+    }
+
+    const { subtotal, discountAmount, discountType, total } = await calculateCartPricing(user, cart);
+
+    // Atomically deduct inventory
     for (const item of cart.items) {
       await Inventory.findOneAndUpdate(
         { product: item.product },
@@ -68,7 +125,7 @@ const OrderService = {
       );
     }
 
-    // Create order
+    // Create 100% Paid Order
     const order = await OrderRepo.create({
       orderNumber: generateOrderNumber(),
       user: user._id,
@@ -83,11 +140,15 @@ const OrderService = {
       subtotal,
       discountAmount,
       total,
-      paymentMethod: 'cod',
+      paymentMethod: 'razorpay',
+      paymentStatus: 'paid',
+      razorpayOrderId,
+      razorpayPaymentId,
+      razorpaySignature,
       coupon: cart.coupon || null,
       discountType,
       status: 'confirmed',
-      statusHistory: [{ status: 'confirmed', timestamp: new Date() }],
+      statusHistory: [{ status: 'confirmed', note: 'Prepaid via Razorpay (Online)', timestamp: new Date() }],
     });
 
     // Record coupon usage
@@ -96,13 +157,13 @@ const OrderService = {
       await Coupon.findByIdAndUpdate(cart.coupon, { $inc: { usageCount: 1 } });
     }
 
-    // Increment order count (for first-order gift logic)
+    // Increment user's completed order count
     await User.findByIdAndUpdate(user._id, { $inc: { orderCount: 1 } });
 
     // Clear cart
     await CartRepo.clear(user._id);
 
-    // Send WhatsApp notification (async — don't block)
+    // Send WhatsApp notification asynchronously
     NotificationService.sendOrderConfirmed(user.phone, user.name || 'Customer', order.orderNumber, total).catch(console.error);
 
     return order;
@@ -139,6 +200,7 @@ const OrderService = {
     };
   },
 
+  // ─── Admin Management ──────────────────────────────────────────────────────
   async adminListOrders(query) {
     const { skip, limit, buildPagination } = paginate(query);
     const filter = {};
@@ -162,7 +224,7 @@ const OrderService = {
     const order = await OrderRepo.addTracking(orderId, { trackingId, courier });
     if (!order) throw new AppError('Order not found', 404);
 
-    // Send WhatsApp with AWB (async)
+    // Send WhatsApp with AWB & courier reference (async)
     const user = await User.findById(order.user).lean();
     if (user) {
       NotificationService.sendOrderShipped(user.phone, order.orderNumber, courier, trackingId).catch(console.error);
@@ -172,8 +234,22 @@ const OrderService = {
 
   async updateStatus(orderId, { status, note }) {
     if (!mongoose.isValidObjectId(orderId)) throw new AppError('Invalid order ID', 400);
+    const existing = await OrderRepo.findById(orderId);
+    if (!existing) throw new AppError('Order not found', 404);
+
+    // If Admin cancels the order, restore inventory stock automatically
+    if (status === 'cancelled' && existing.status !== 'cancelled') {
+      for (const item of existing.items) {
+        if (item.product) {
+          await Inventory.findOneAndUpdate(
+            { product: item.product },
+            { $inc: { quantity: item.quantity } }
+          );
+        }
+      }
+    }
+
     const order = await OrderRepo.updateStatus(orderId, status, note);
-    if (!order) throw new AppError('Order not found', 404);
 
     // Send WhatsApp on delivered
     if (status === 'delivered') {

@@ -42,4 +42,12 @@ const getMe = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { sendOTP, verifyOTP, adminLogin, refreshToken, logout, getMe };
+const updateProfile = async (req, res, next) => {
+  try {
+    const userId = req.user?._id || req.user?.id;
+    const user = await AuthService.updateProfile(userId, req.body);
+    return res.json(ApiResponse.success(user, 'Profile updated successfully'));
+  } catch (err) { next(err); }
+};
+
+module.exports = { sendOTP, verifyOTP, adminLogin, refreshToken, logout, getMe, updateProfile };
