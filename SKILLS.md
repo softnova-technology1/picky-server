@@ -1,8 +1,8 @@
-# SKILLS.md — Picky Developer Collaboration Guide
+# SKILLS.md — Picky Developer Guide
 
-> **Project:** Picky — Single-Vendor E-Commerce Platform  
-> **Stack:** MERN (MongoDB, Express.js, React 18, Node.js)  
-> **Architecture:** Modular Monolith · 2 Separate Repos  
+> **Project:** Picky — Single-Vendor E-Commerce Platform
+> **Stack:** MERN (MongoDB, Express.js, React 18, Node.js)
+> **Architecture:** Modular Monolith · 2 Separate Repos
 > **Pattern:** Controller → Service → Repository → Database
 
 ---
@@ -11,38 +11,36 @@
 
 1. [Two Repos Overview](#1-two-repos-overview)
 2. [Getting Started](#2-getting-started)
-3. [Git & GitHub Workflow](#3-git--github-workflow)
-4. [Backend Guide — picky-server](#4-backend-guide--picky-server)
-5. [Frontend Guide — picky-client](#5-frontend-guide--picky-client)
-6. [Order Tracking Feature](#6-order-tracking-feature)
-7. [API Contract Process](#7-api-contract-process)
-8. [Database Rules](#8-database-rules)
-9. [Naming Conventions](#9-naming-conventions)
-10. [Environment Variables](#10-environment-variables)
-11. [Testing Checklist](#11-testing-checklist)
-12. [Deployment Guide](#12-deployment-guide)
+3. [Backend Guide — picky-server](#3-backend-guide--picky-server)
+4. [Frontend Guide — picky_client](#4-frontend-guide--picky_client)
+5. [Order Tracking Feature](#5-order-tracking-feature)
+6. [API Contract Process](#6-api-contract-process)
+7. [Database Rules](#7-database-rules)
+8. [Naming Conventions](#8-naming-conventions)
+9. [Environment Variables](#9-environment-variables)
+10. [Testing Checklist](#10-testing-checklist)
 
 ---
 
 ## 1. Two Repos Overview
 
-| Repo | URL | Deploy | Who Leads |
-|------|-----|--------|-----------|
-| **picky-client** | github.com/your-org/picky-client | Vercel | Dev 1 |
-| **picky-server** | github.com/your-org/picky-server | Render / Railway | Dev 3 + Dev 4 |
+| Repo | Purpose | Deploy |
+|------|---------|--------|
+| **picky_client** | Customer App + Admin Panel | Vercel |
+| **picky-server** | REST API Server | Render / Railway |
 
 ### Who works where
 
 | Developer | Primary Repo | Modules |
 |-----------|-------------|---------|
-| **Dev 1** | picky-client (Lead) | All customer pages, Cart, Checkout, Order Tracking UI |
-| **Dev 2** | picky-client (Support) | Shared components, UI review; Admin panel built separately or as part of client |
-| **Dev 3** | picky-server (Lead) | auth, product, category, cart modules + all Mongoose models |
-| **Dev 4** | picky-server (Lead) | order, discount, coupon, report + WhatsApp notifications + tracking API |
+| **Dev 1** | picky_client | All customer pages, Cart, Checkout, Order Tracking UI |
+| **Dev 2** | picky_client | Admin panel pages (`/pickyadmin-softnova2026/*`) |
+| **Dev 3** | picky-server | auth, product, category, cart modules + all Mongoose models |
+| **Dev 4** | picky-server | order, discount, coupon, report + WhatsApp notifications + tracking API |
 
 ### Cross-repo coordination
-- Dev 3/4 define API shape **first** in README or api.md
-- Dev 1 mocks the API with static data while server is being built
+- Dev 3/4 define API shape **first** (write in WhatsApp group or api.md)
+- Dev 1/2 mock with static data while server is being built
 - Integration happens when real API is ready — swap mock with Axios call
 
 ---
@@ -52,26 +50,12 @@
 ### Prerequisites
 - Node.js 20 LTS
 - npm 10+
-- Git
-- MongoDB (local or Atlas connection string)
+- MongoDB (Atlas connection string)
 - Redis (local or Upstash URL)
-
-### Setup picky-client
-
-```bash
-git clone https://github.com/your-org/picky-client.git
-cd picky-client
-npm install
-cp .env.example .env
-# Edit .env → set VITE_API_URL=http://localhost:5000/api/v1
-npm run dev
-# Runs on http://localhost:3000
-```
 
 ### Setup picky-server
 
 ```bash
-git clone https://github.com/your-org/picky-server.git
 cd picky-server
 npm install
 cp .env.example .env
@@ -80,131 +64,20 @@ npm run dev
 # Runs on http://localhost:5000
 ```
 
-### First-Time GitHub Setup (Project Lead does this ONCE)
+### Setup picky_client
 
 ```bash
-# picky-client
-git clone https://github.com/your-org/picky-client.git
-cd picky-client
-git checkout -b develop
-git push origin develop
-# On GitHub: Settings → Branches → Protect main + develop → Require PR + 1 review
-
-# picky-server (same steps)
-git clone https://github.com/your-org/picky-server.git
-cd picky-server
-git checkout -b develop
-git push origin develop
+cd picky_client
+npm install
+cp .env.example .env
+# Edit .env → set VITE_API_URL=http://localhost:5000/api/v1
+npm run dev
+# Runs on http://localhost:3000
 ```
 
 ---
 
-## 3. Git & GitHub Workflow
-
-### Branch Strategy (BOTH repos follow this)
-
-```
-main      ← Production (PROTECTED — no direct push, no direct merge)
-  └── develop  ← Integration branch (all features merge here first)
-        ├── feat/client/home-page
-        ├── feat/client/order-tracking-ui
-        ├── feat/server/auth-otp
-        ├── feat/server/order-checkout
-        ├── feat/server/order-tracking      ← AWB entry + tracking API
-        ├── fix/client/cart-qty-sync
-        ├── fix/server/otp-rate-limit
-        └── chore/server/add-indexes
-```
-
-### Branch Naming Convention
-
-```
-feat/<repo>/<feature>           → New feature
-fix/<repo>/<module>/<bug>       → Bug fix
-chore/<repo>/<description>      → Maintenance
-refactor/<repo>/<description>   → Refactoring
-
-Examples:
-feat/client/order-tracking-ui
-feat/server/order-tracking
-feat/server/wa-notifications
-fix/client/awb-copy-button
-fix/server/stock-deduction
-chore/server/update-mongoose
-```
-
-### Commit Message Format (Conventional Commits — MANDATORY)
-
-```
-type(scope): short description
-
-Types: feat | fix | chore | refactor | docs | test
-
-Examples:
-feat(order): add GET /orders/:id/tracking endpoint
-feat(order): add AWB entry + WhatsApp trigger on ship
-feat(ui): add 3-step visual tracking stepper
-feat(ui): add AWB copy button with clipboard API
-fix(cart): correct qty validation against available stock
-fix(tracking): show correct courier name in WA message
-chore(deps): upgrade mongoose to 8.x
-refactor(order): extract pricing logic to _calculatePricing()
-```
-
-### Daily Git Workflow (Every Dev, Every Day)
-
-```bash
-# START OF DAY — sync with latest develop
-git checkout develop
-git pull origin develop
-
-# Switch to or create your feature branch
-git checkout feat/server/order-tracking
-# OR create new:
-git checkout -b feat/server/order-tracking
-
-# Keep your branch up to date (do this daily)
-git rebase develop
-
-# Write code...
-
-# Save progress
-git add .
-git commit -m "feat(order): add statusHistory[] to order model"
-
-# Push your branch
-git push origin feat/server/order-tracking
-
-# WHEN FEATURE IS DONE — create PR on GitHub
-# Target: develop (NEVER main)
-# Add description with: What changed, Why, How to test
-```
-
-### Pull Request Rules
-
-| Rule | Details |
-|------|---------|
-| Target branch | Always `develop`, never `main` |
-| Reviewer | Minimum 1 team member must approve |
-| CI check | Lint must pass before merge |
-| PR title | Must follow Conventional Commit format |
-| Description | What changed + how to test (required) |
-| No `.env` | Never commit env files |
-| No debug code | Remove `console.log` before PR |
-
-### Adding a Team Member to GitHub Repo
-
-```
-1. Go to: github.com/your-org/picky-server
-2. Settings → Collaborators → Add people
-3. Enter their GitHub username or email
-4. They accept the invite
-5. They clone and set up locally
-```
-
----
-
-## 4. Backend Guide — picky-server
+## 3. Backend Guide — picky-server
 
 ### Module File Structure (5 files per module — ALWAYS)
 
@@ -316,24 +189,47 @@ throw new AppError('Invalid coupon code', 400);
 { "success": false, "error": "Order not found", "statusCode": 404 }
 ```
 
+### Admin Routes Pattern
+
+```js
+// All admin routes are prefixed /api/v1/admin/
+// Protected by: authenticate + requireRole('admin')
+
+router.patch('/admin/orders/:id/tracking',
+  authenticate,
+  requireRole('admin'),
+  validate(trackingSchema),
+  orderController.addTracking
+);
+```
+
 ---
 
-## 5. Frontend Guide — picky-client
+## 4. Frontend Guide — picky_client
+
+### URL Structure
+
+| URL | Who can access |
+|-----|---------------|
+| `/` | Public — All customers |
+| `/pickyadmin-softnova2026` | Admin only — protected |
+| `/pickyadmin-softnova2026/*` | Admin only — protected |
 
 ### Folder Structure
 
 ```
 src/
   components/
-    ui/                  ← Button, Input, Modal, Toast, Spinner
-    layout/              ← Navbar, Footer, PageWrapper
+    ui/                  ← Button, Input, Modal, Toast, Spinner, Badge
+    layout/              ← Navbar, Footer, PageWrapper, ProtectedRoute, AdminProtectedRoute
     product/             ← ProductCard, Gallery, PriceDisplay
     order/               ← OrderTracker, TrackingStepper, AWBBox, StatusTimeline
   pages/                 ← One file per route
+    admin/               ← All admin pages (/pickyadmin-softnova2026/*)
   store/                 ← Zustand stores
   services/              ← Axios API calls
   hooks/                 ← Custom React hooks
-  styles/                ← CSS files
+  styles/                ← CSS files (index.css, admin.css)
   utils/                 ← formatPrice, slugify, formatDate
 ```
 
@@ -366,7 +262,7 @@ export function useOrderTracking(orderId) {
     queryKey: ['order-tracking', orderId],
     queryFn: () => orderService.getTracking(orderId),
     enabled: !!orderId,
-    staleTime: 30_000,          // 30 seconds
+    staleTime: 30_000,
     refetchInterval: 30_000,    // Poll every 30s while page is open
   });
 }
@@ -381,7 +277,7 @@ import api from './api';
 export const orderService = {
   list: () => api.get('/orders'),
   getById: (id) => api.get(`/orders/${id}`),
-  getTracking: (id) => api.get(`/orders/${id}/tracking`),  // ← TRACKING
+  getTracking: (id) => api.get(`/orders/${id}/tracking`),
   checkout: (body) => api.post('/orders', body),
 };
 ```
@@ -389,9 +285,9 @@ export const orderService = {
 ### Protected Route
 
 ```jsx
-// components/ProtectedRoute.jsx
+// components/layout/ProtectedRoute.jsx
 import { Navigate, useLocation } from 'react-router-dom';
-import { useAuthStore } from '../store/authStore';
+import { useAuthStore } from '../../store/authStore';
 
 export function ProtectedRoute({ children }) {
   const { isLoggedIn } = useAuthStore();
@@ -399,92 +295,35 @@ export function ProtectedRoute({ children }) {
   if (!isLoggedIn) return <Navigate to="/login" state={{ from: location }} replace />;
   return children;
 }
+
+// components/layout/AdminProtectedRoute.jsx
+export function AdminProtectedRoute({ children }) {
+  const { isLoggedIn, user } = useAuthStore();
+  if (!isLoggedIn || user?.role !== 'admin') return <Navigate to="/" replace />;
+  return children;
+}
 ```
 
 ---
 
-## 6. Order Tracking Feature
+## 5. Order Tracking Feature
 
-This is a core feature. Both repos must implement it correctly.
-
-### Customer Flow (picky-client)
+### Customer Flow (picky_client)
 1. Customer goes to **My Orders** (`/orders`)
 2. Clicks any order → goes to **Order Detail** (`/orders/:id`)
 3. Page shows `OrderTracker` component which calls `GET /orders/:id/tracking`
 4. Visual 3-step stepper: **Confirmed → Shipped → Delivered**
-5. If status is `shipped`: AWB number displayed prominently, courier name shown, copy-to-clipboard button
+5. If status is `shipped`: AWB number displayed, courier name shown, copy-to-clipboard button
 6. Status timeline (chronological, newest first)
-7. Page auto-refreshes tracking every 30 seconds (TanStack Query `refetchInterval`)
+7. Page auto-refreshes tracking every 30 seconds
 
-### Admin Flow (picky-server)
-1. Admin views order detail
+### Admin Flow (picky_client + picky-server)
+1. Admin opens `/pickyadmin-softnova2026/orders/:id`
 2. Enters AWB number + selects courier from dropdown
 3. Clicks "Mark as Shipped" → calls `PATCH /admin/orders/:id/tracking`
 4. Server: updates status, pushes to `statusHistory[]`, triggers WhatsApp to customer
 
-### Tracking Component Tree (picky-client)
-
-```jsx
-// pages/OrderDetail.jsx
-<OrderDetail>
-  <OrderHeader />         // Order#, date, total, COD pill
-  <OrderTracker>          // Calls useOrderTracking(orderId)
-    <TrackingStepper />   // 3 dots: Confirmed / Shipped / Delivered
-    <AWBBox />            // Shows AWB + copy btn (only when shipped)
-    <StatusTimeline />    // List of { status, timestamp }
-  </OrderTracker>
-  <OrderItems />          // Snapshot items list
-  <ShippingAddress />
-</OrderDetail>
-```
-
-### TrackingStepper Logic
-
-```jsx
-// components/order/TrackingStepper.jsx
-const STEPS = ['confirmed', 'shipped', 'delivered'];
-
-function StepIcon({ step, currentStatus }) {
-  const stepIndex = STEPS.indexOf(step);
-  const currentIndex = STEPS.indexOf(currentStatus);
-  if (stepIndex < currentIndex) return <DoneIcon />;      // past step ✅
-  if (stepIndex === currentIndex) return <ActiveIcon />;  // current 🔄
-  return <PendingIcon />;                                  // future ⏳
-}
-```
-
-### AWBBox Logic
-
-```jsx
-// components/order/AWBBox.jsx
-// Only render if status is 'shipped' or 'delivered'
-function AWBBox({ trackingId, courier, status }) {
-  if (status === 'confirmed') return <AwaitingShipmentBox />;
-  return (
-    <div className="awb-box">
-      <div className="awb-num">{trackingId}</div>
-      <div className="awb-courier">via {courier}</div>
-      <button onClick={() => navigator.clipboard.writeText(trackingId)}>
-        Copy AWB
-      </button>
-    </div>
-  );
-}
-```
-
----
-
-## 7. API Contract Process
-
-**Rule: API Contract FIRST, Code SECOND**
-
-1. Dev 3 or Dev 4 writes the endpoint shape in README or api.md
-2. Team quickly reviews (async, 5 min)
-3. Dev 1 builds the UI with **mock/hardcoded data**
-4. Dev 3/4 implements the real API
-5. Dev 1 swaps mock for real Axios call → test integration
-
-### Tracking API Contract Example
+### Tracking API Contract
 
 ```
 GET /api/v1/orders/:id/tracking
@@ -495,9 +334,9 @@ Response 200:
   "success": true,
   "data": {
     "orderNumber": "PKY-20260903-0042",
-    "status": "shipped",           // confirmed | shipped | delivered
-    "trackingId": "D123456789IN",  // null if not shipped yet
-    "courier": "DTDC Express",     // null if not shipped yet
+    "status": "shipped",
+    "trackingId": "D123456789IN",
+    "courier": "DTDC Express",
     "statusHistory": [
       { "status": "shipped",   "timestamp": "2026-09-03T08:40:00Z" },
       { "status": "confirmed", "timestamp": "2026-09-03T04:54:00Z" }
@@ -509,22 +348,52 @@ PATCH /api/v1/admin/orders/:id/tracking
 Auth: Bearer token (admin)
 Body: { "trackingId": "D123456789IN", "courier": "DTDC Express" }
 
-Response 200:
-{ "success": true, "data": { <updated order> }, "message": "Tracking updated. WhatsApp sent." }
 Side effects:
   - order.status → "shipped"
   - order.statusHistory[] → push { status: "shipped", timestamp: now }
-  - WhatsApp sent to customer: "Order shipped! AWB: D123456789IN via DTDC Express"
+  - WhatsApp sent to customer with AWB number
+```
+
+### WhatsApp Message Templates (Twilio)
+
+```
+OTP:
+"Your Picky OTP is: {{otp}}. Valid for 5 minutes. Do not share."
+
+Order Confirmed:
+"Hi {{name}}! Your Picky order #{{orderNumber}} is confirmed!
+Total: Rs.{{amount}}. We'll notify when shipped."
+
+Order Shipped:
+"Order #{{orderNumber}} shipped!
+Courier: {{courier}}
+AWB: {{trackingId}}"
+
+Order Delivered:
+"Picky order #{{orderNumber}} delivered!
+Thank you for shopping with us!"
 ```
 
 ---
 
-## 8. Database Rules
+## 6. API Contract Process
+
+**Rule: API Contract FIRST, Code SECOND**
+
+1. Dev 3 or Dev 4 writes the endpoint shape in WhatsApp group or `api.md`
+2. Team reviews (async, 5 min)
+3. Dev 1/2 build the UI with **mock/hardcoded data**
+4. Dev 3/4 implement the real API
+5. Dev 1/2 swap mock for real Axios call → test integration
+
+---
+
+## 7. Database Rules
 
 1. **`.lean()`** on all read-only queries (performance)
 2. **Never `find()` without limit** — always paginate
 3. **Order items = SNAPSHOT** — copy name, image, price at time of purchase
-4. **`statusHistory[]`** — always push to this array on every status change, never overwrite
+4. **`statusHistory[]`** — always push on every status change, never overwrite
 5. **`trackingId` and `courier`** — null by default, set only when admin enters AWB
 6. **First-order gift** — NEVER expose in API response. Type `first_order` is internal only
 7. **Soft delete products** — `isActive: false`, never hard delete
@@ -549,7 +418,7 @@ db.inventory.createIndex({ product: 1 }, { unique: true })
 
 ---
 
-## 9. Naming Conventions
+## 8. Naming Conventions
 
 | Item | Convention | Example |
 |------|------------|---------|
@@ -559,13 +428,12 @@ db.inventory.createIndex({ product: 1 }, { unique: true })
 | Constants | UPPER_SNAKE_CASE | `MAX_OTP_ATTEMPTS` |
 | CSS classes | kebab-case | `awb-box` |
 | MongoDB collections | snake_case plural | `coupon_usages` |
-| API endpoints | kebab-case | `/send-otp`, `/order-tracking` |
-| Git branches | kebab with prefix | `feat/server/order-tracking` |
-| Commits | Conventional Commits | `feat(order): add tracking API` |
+| API endpoints | kebab-case | `/send-otp` |
+| Admin URL prefix | fixed | `/pickyadmin-softnova2026` |
 
 ---
 
-## 10. Environment Variables
+## 9. Environment Variables
 
 ### picky-server/.env.example
 
@@ -580,7 +448,6 @@ JWT_ACCESS_EXPIRES=15m
 JWT_REFRESH_EXPIRES=7d
 TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TWILIO_AUTH_TOKEN=your_auth_token
-TWILIO_PHONE_NUMBER=+1415XXXXXXX
 TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_api_key
@@ -590,18 +457,19 @@ OTP_MAX_ATTEMPTS=3
 ALLOWED_ORIGINS=http://localhost:3000
 ```
 
-### picky-client/.env.example
+### picky_client/.env.example
 
 ```env
 VITE_API_URL=http://localhost:5000/api/v1
 VITE_APP_NAME=Picky
+VITE_ADMIN_PATH=pickyadmin-softnova2026
 ```
 
-> **NEVER commit `.env`** — only `.env.example`. Share actual secrets via password manager or secure channel (1Password, Bitwarden). Set production secrets directly in Vercel/Render dashboard.
+> **NEVER commit `.env`** — only `.env.example`. Share actual secrets via WhatsApp or secure channel. Set production secrets directly in Vercel/Render dashboard.
 
 ---
 
-## 11. Testing Checklist
+## 10. Testing Checklist
 
 ### Tracking Feature
 
@@ -612,14 +480,12 @@ VITE_APP_NAME=Picky
 - [ ] Order status becomes `shipped`
 - [ ] `statusHistory[]` has both `confirmed` and `shipped` entries
 - [ ] WhatsApp received with AWB number
-- [ ] Call `GET /orders/:id/tracking` → returns AWB + courier + full statusHistory
 - [ ] Customer sees step 2 highlighted (Shipped), AWB box shows, copy button works
-- [ ] Admin marks as delivered → `PATCH /admin/orders/:id/status { status: "delivered" }`
-- [ ] WhatsApp delivered notification sent
+- [ ] Admin marks as delivered → WhatsApp delivery notification sent
 - [ ] All 3 steps shown as done in stepper
 
 ### Auth Flow
-- [ ] Send OTP → receive SMS
+- [ ] Send OTP → receive WhatsApp/SMS
 - [ ] Wrong OTP 3 times → blocked
 - [ ] Verify OTP → JWT returned
 - [ ] Expired token → 401 → auto refresh → retry succeeds
@@ -632,73 +498,5 @@ VITE_APP_NAME=Picky
 
 ---
 
-## 12. Deployment Guide
-
-| Service | What | URL |
-|---------|------|-----|
-| Vercel | picky-client | vercel.app |
-| Render / Railway | picky-server | onrender.com |
-| MongoDB Atlas | Database | cloud.mongodb.com |
-| Upstash | Redis | upstash.com |
-| Cloudinary | Images | cloudinary.com |
-| Twilio | WA + SMS | twilio.com |
-
-### GitHub Actions CI (add to both repos)
-
-```yaml
-# .github/workflows/ci.yml
-name: CI
-on: [push, pull_request]
-jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '20' }
-      - run: npm ci
-      - run: npm run lint
-```
-
-### Deployment Checklist (Go Live)
-
-- [ ] All env vars set in Vercel (client) and Render (server)
-- [ ] CORS `ALLOWED_ORIGINS` updated to production Vercel URL
-- [ ] MongoDB Atlas IP whitelist: allow Render outbound IPs (or allow all: 0.0.0.0/0 for dev)
-- [ ] Twilio WA number approved for production (not sandbox)
-- [ ] Cloudinary upload preset created
-- [ ] GitHub branch protection confirmed on main
-- [ ] OTP rate limit tuned (3 per 15min in prod)
-- [ ] Winston log level: `warn` in production
-- [ ] Test complete order + tracking flow end-to-end on production before announcing go-live
-
----
-
-## Quick Reference
-
-```
-picky-client → github.com/your-org/picky-client → Vercel → :3000 dev
-picky-server → github.com/your-org/picky-server → Render  → :5000 dev
-
-Auth: Phone → OTP (Redis 5min) → JWT access (15m) + refresh (7d)
-Cart: localStorage (guest) → DB (logged in) → merge on login
-Order: Confirmed → Shipped (AWB entered by admin) → Delivered
-Track: GET /orders/:id/tracking → { status, trackingId, courier, statusHistory[] }
-WA:   OTP + Confirmed + Shipped(AWB) + Delivered — all via Twilio
-Gift: First-order discount is SILENT — never shown to customer
-
-Git:
-  main ← develop ← feat/* (all PRs via develop, never direct to main)
-  Commit: feat(scope): description
-  PR: min 1 review + lint pass required
-
-Deploy:
-  npm run dev:client → :3000
-  npm run dev:server → :5000
-  Both .env files must be filled before running
-```
-
----
-
-*Last updated: 2026-09-03 | Version: 1.1.0*  
-*See `index.html` for the full visual architecture with interactive diagrams including Order Tracking UI.*
+*Last updated: 2026-09-04 | Version: 2.0.0*
+*See `index.html` for the full visual architecture with interactive diagrams.*

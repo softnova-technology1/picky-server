@@ -1,0 +1,30 @@
+const mongoose = require('mongoose');
+
+const characteristicSchema = new mongoose.Schema(
+  { key: String, value: String },
+  { _id: false }
+);
+
+const productSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    slug: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    description: { type: String, trim: true },
+    category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },
+    images: [{ type: String }], // Cloudinary URLs
+    price: { type: Number, required: true, min: 0 },
+    discountPrice: { type: Number, min: 0 }, // null = no discount
+    characteristics: [characteristicSchema],
+    tags: [{ type: String, lowercase: true, trim: true }],
+    isActive: { type: Boolean, default: true },
+    isFeatured: { type: Boolean, default: false },
+    sortOrder: { type: Number, default: 0 },
+  },
+  { timestamps: true }
+);
+
+productSchema.index({ category: 1 });
+productSchema.index({ isActive: 1 });
+productSchema.index({ name: 'text', tags: 'text', description: 'text' });
+
+module.exports = mongoose.model('Product', productSchema);
