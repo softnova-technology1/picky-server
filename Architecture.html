@@ -1,0 +1,1487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Picky — Full System Architecture</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root{--bg-primary:#0a0a0f;--bg-secondary:#10101a;--bg-card:#14141f;--bg-card-hover:#1a1a28;--border:#1e1e2e;--border-accent:#2a2a3e;--accent-purple:#7c3aed;--accent-blue:#2563eb;--accent-cyan:#06b6d4;--accent-green:#10b981;--accent-orange:#f59e0b;--accent-pink:#ec4899;--accent-red:#ef4444;--text-primary:#f1f5f9;--text-secondary:#94a3b8;--text-muted:#475569;--gradient-hero:linear-gradient(135deg,#7c3aed 0%,#2563eb 50%,#06b6d4 100%);--shadow-glow:0 0 40px rgba(124,58,237,0.15);--shadow-card:0 4px 24px rgba(0,0,0,0.4);--radius:16px;--radius-sm:8px;}
+    *{margin:0;padding:0;box-sizing:border-box;}html{scroll-behavior:smooth;}
+    body{font-family:'Inter',sans-serif;background:var(--bg-primary);color:var(--text-primary);line-height:1.6;overflow-x:hidden;}
+    ::-webkit-scrollbar{width:6px;}::-webkit-scrollbar-track{background:var(--bg-primary);}::-webkit-scrollbar-thumb{background:var(--accent-purple);border-radius:3px;}
+    nav{position:fixed;top:0;left:0;right:0;z-index:1000;background:rgba(10,10,15,0.85);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:0 2rem;height:64px;display:flex;align-items:center;justify-content:space-between;}
+    .nav-logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:1.3rem;background:var(--gradient-hero);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+    .nav-links{display:flex;gap:.25rem;list-style:none;overflow-x:auto;}
+    .nav-links a{color:var(--text-secondary);text-decoration:none;font-size:.78rem;font-weight:500;padding:6px 12px;border-radius:6px;transition:all .2s;white-space:nowrap;}
+    .nav-links a:hover{color:var(--text-primary);background:var(--border);}
+    .nav-badge{background:var(--gradient-hero);color:white;font-size:.7rem;font-weight:700;padding:4px 12px;border-radius:20px;letter-spacing:.5px;white-space:nowrap;}
+    .hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:8rem 2rem 4rem;position:relative;overflow:hidden;}
+    .hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 80% 60% at 50% 0%,rgba(124,58,237,.18) 0%,transparent 70%),radial-gradient(ellipse 60% 40% at 80% 80%,rgba(37,99,235,.12) 0%,transparent 60%);}
+    .hero-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(124,58,237,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(124,58,237,.04) 1px,transparent 1px);background-size:60px 60px;}
+    .hero-content{position:relative;z-index:1;max-width:900px;}
+    .hero-badge{display:inline-flex;align-items:center;gap:8px;background:rgba(124,58,237,.15);border:1px solid rgba(124,58,237,.3);color:#a78bfa;font-size:.8rem;font-weight:600;padding:8px 20px;border-radius:50px;margin-bottom:2rem;letter-spacing:.5px;}
+    .hero h1{font-size:clamp(3rem,8vw,6rem);font-weight:900;line-height:1.05;margin-bottom:1.5rem;}
+    .hero h1 .gradient{background:var(--gradient-hero);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+    .hero-subtitle{font-size:1.15rem;color:var(--text-secondary);max-width:600px;margin:0 auto 3rem;}
+    .hero-stats{display:flex;gap:2rem;justify-content:center;flex-wrap:wrap;}
+    .hero-stat{text-align:center;}
+    .hero-stat-num{font-size:2rem;font-weight:800;background:var(--gradient-hero);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+    .hero-stat-label{font-size:.75rem;color:var(--text-muted);font-weight:500;text-transform:uppercase;letter-spacing:1px;}
+    section{padding:5rem 2rem;max-width:1400px;margin:0 auto;}
+    .section-header{text-align:center;margin-bottom:4rem;}
+    .section-tag{display:inline-block;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:var(--accent-purple);margin-bottom:1rem;}
+    .section-title{font-size:clamp(1.8rem,4vw,2.8rem);font-weight:800;margin-bottom:1rem;}
+    .section-desc{color:var(--text-secondary);font-size:1rem;max-width:600px;margin:0 auto;}
+    .tech-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.5rem;}
+    .tech-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:1.8rem;transition:all .3s;position:relative;overflow:hidden;}
+    .tech-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;}
+    .tech-card.frontend::before{background:linear-gradient(90deg,#06b6d4,#2563eb);}
+    .tech-card.backend::before{background:linear-gradient(90deg,#10b981,#2563eb);}
+    .tech-card.db::before{background:linear-gradient(90deg,#f59e0b,#ef4444);}
+    .tech-card.infra::before{background:linear-gradient(90deg,#7c3aed,#ec4899);}
+    .tech-card.tools::before{background:linear-gradient(90deg,#06b6d4,#10b981);}
+    .tech-card:hover{border-color:var(--border-accent);transform:translateY(-3px);box-shadow:var(--shadow-card);}
+    .tech-card-icon{font-size:2rem;margin-bottom:1rem;}
+    .tech-card-title{font-weight:700;font-size:1rem;margin-bottom:.75rem;}
+    .tech-tags{display:flex;flex-wrap:wrap;gap:6px;}
+    .tech-tag{background:rgba(255,255,255,.06);border:1px solid var(--border);color:var(--text-secondary);font-size:.72rem;font-weight:500;padding:3px 10px;border-radius:4px;font-family:'JetBrains Mono',monospace;}
+    .arch-diagram{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:2.5rem;margin-bottom:2rem;}
+    .arch-row{display:flex;gap:1rem;align-items:stretch;flex-wrap:wrap;}
+    .arch-box{flex:1;min-width:140px;border-radius:var(--radius-sm);padding:1.25rem 1.5rem;border:1px solid transparent;transition:all .3s;}
+    .arch-box:hover{transform:scale(1.02);}
+    .arch-box.client{background:rgba(6,182,212,.1);border-color:rgba(6,182,212,.3);}
+    .arch-box.gateway{background:rgba(124,58,237,.1);border-color:rgba(124,58,237,.3);}
+    .arch-box.service{background:rgba(37,99,235,.1);border-color:rgba(37,99,235,.3);}
+    .arch-box.data{background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.3);}
+    .arch-box.external{background:rgba(16,185,129,.1);border-color:rgba(16,185,129,.3);}
+    .arch-box-title{font-weight:700;font-size:.85rem;margin-bottom:.5rem;}
+    .arch-box-items{list-style:none;font-size:.75rem;color:var(--text-secondary);display:flex;flex-wrap:wrap;gap:4px;}
+    .arch-box-items li{background:rgba(255,255,255,.06);padding:2px 8px;border-radius:4px;font-family:'JetBrains Mono',monospace;}
+    .flow-container{display:flex;align-items:center;gap:0;flex-wrap:wrap;justify-content:center;row-gap:1rem;}
+    .flow-step{display:flex;flex-direction:column;align-items:center;text-align:center;}
+    .flow-box{border-radius:var(--radius-sm);padding:.75rem 1rem;font-size:.75rem;font-weight:600;border:1px solid;}
+    .flow-box.c1{background:rgba(6,182,212,.12);border-color:rgba(6,182,212,.4);color:#67e8f9;}
+    .flow-box.c2{background:rgba(124,58,237,.12);border-color:rgba(124,58,237,.4);color:#c4b5fd;}
+    .flow-box.c3{background:rgba(37,99,235,.12);border-color:rgba(37,99,235,.4);color:#93c5fd;}
+    .flow-box.c4{background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.4);color:#6ee7b7;}
+    .flow-box.c5{background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.4);color:#fcd34d;}
+    .flow-box.c6{background:rgba(236,72,153,.12);border-color:rgba(236,72,153,.4);color:#f9a8d4;}
+    .flow-arrow{color:var(--text-muted);font-size:1.2rem;padding:0 .4rem;flex-shrink:0;}
+    .flow-label{font-size:.62rem;color:var(--text-muted);margin-top:3px;}
+    .db-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1.25rem;}
+    .db-table{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;transition:all .3s;}
+    .db-table:hover{border-color:var(--border-accent);box-shadow:0 0 20px rgba(124,58,237,.1);}
+    .db-table-header{padding:.75rem 1rem;font-weight:700;font-size:.82rem;}
+    .db-table-header.users{background:rgba(6,182,212,.15);}
+    .db-table-header.products{background:rgba(37,99,235,.15);}
+    .db-table-header.orders{background:rgba(16,185,129,.15);}
+    .db-table-header.catalog{background:rgba(124,58,237,.15);}
+    .db-table-header.promo{background:rgba(245,158,11,.15);}
+    .db-table-header.misc{background:rgba(236,72,153,.15);}
+    .db-table-body{padding:.5rem 0;}
+    .db-field{display:flex;justify-content:space-between;align-items:center;padding:.3rem 1rem;font-size:.72rem;gap:1rem;transition:background .2s;}
+    .db-field:hover{background:rgba(255,255,255,.03);}
+    .db-field-name{font-family:'JetBrains Mono',monospace;color:var(--text-primary);}
+    .db-field-name.pk{color:#fcd34d;}.db-field-name.fk{color:#93c5fd;}.db-field-name.idx{color:#6ee7b7;}
+    .db-field-type{font-family:'JetBrains Mono',monospace;color:var(--text-muted);font-size:.68rem;flex-shrink:0;}
+    .api-group{margin-bottom:3rem;}
+    .api-group-title{font-size:1.1rem;font-weight:700;margin-bottom:1rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+    .api-table-wrap{overflow-x:auto;border-radius:var(--radius-sm);border:1px solid var(--border);}
+    table{width:100%;border-collapse:collapse;font-size:.78rem;}
+    th{background:rgba(255,255,255,.05);padding:.75rem 1rem;text-align:left;font-weight:600;color:var(--text-secondary);border-bottom:1px solid var(--border);white-space:nowrap;}
+    td{padding:.65rem 1rem;border-bottom:1px solid rgba(255,255,255,.03);color:var(--text-secondary);vertical-align:middle;}
+    tr:last-child td{border-bottom:none;}tr:hover td{background:rgba(255,255,255,.02);}
+    .method{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:.7rem;padding:3px 8px;border-radius:4px;display:inline-block;}
+    .method.GET{background:rgba(16,185,129,.15);color:#6ee7b7;}.method.POST{background:rgba(37,99,235,.15);color:#93c5fd;}
+    .method.PUT{background:rgba(245,158,11,.15);color:#fcd34d;}.method.PATCH{background:rgba(124,58,237,.15);color:#c4b5fd;}
+    .method.DELETE{background:rgba(239,68,68,.15);color:#fca5a5;}
+    .endpoint{font-family:'JetBrains Mono',monospace;color:var(--text-primary);font-size:.75rem;}
+    .auth-badge{font-size:.65rem;padding:2px 7px;border-radius:4px;font-weight:600;}
+    .auth-pub{background:rgba(16,185,129,.12);color:#6ee7b7;border:1px solid rgba(16,185,129,.3);}
+    .auth-user{background:rgba(37,99,235,.12);color:#93c5fd;border:1px solid rgba(37,99,235,.3);}
+    .auth-admin{background:rgba(239,68,68,.12);color:#fca5a5;border:1px solid rgba(239,68,68,.3);}
+    .tree{font-family:'JetBrains Mono',monospace;font-size:.78rem;line-height:2;color:var(--text-secondary);background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:2rem;overflow-x:auto;}
+    .tree .folder{color:#93c5fd;font-weight:600;}.tree .comment{color:var(--text-muted);font-style:italic;}.tree .entry{display:block;}.tree .hl{color:#c4b5fd;}
+    .order-flow{display:flex;flex-direction:column;gap:0;}
+    .order-step{display:flex;gap:1.5rem;align-items:flex-start;}
+    .order-step-line{display:flex;flex-direction:column;align-items:center;flex-shrink:0;}
+    .order-dot{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;flex-shrink:0;border:2px solid;}
+    .order-connector{width:2px;flex:1;min-height:30px;margin:4px 0;}
+    .order-step-content{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1rem 1.5rem;flex:1;margin-bottom:1.5rem;}
+    .order-step-content:hover{border-color:var(--border-accent);}
+    .order-step-title{font-weight:700;font-size:.9rem;margin-bottom:.25rem;}
+    .order-step-desc{font-size:.78rem;color:var(--text-secondary);}
+    .highlight-box{background:rgba(124,58,237,.08);border:1px solid rgba(124,58,237,.25);border-radius:var(--radius-sm);padding:1rem 1.5rem;font-size:.82rem;color:var(--text-secondary);margin-top:1rem;}
+    .highlight-box strong{color:#c4b5fd;}
+    .pill{display:inline-block;padding:3px 12px;border-radius:50px;font-size:.7rem;font-weight:600;}
+    .pill.purple{background:rgba(124,58,237,.15);color:#c4b5fd;border:1px solid rgba(124,58,237,.3);}
+    .pill.blue{background:rgba(37,99,235,.15);color:#93c5fd;border:1px solid rgba(37,99,235,.3);}
+    .pill.green{background:rgba(16,185,129,.15);color:#6ee7b7;border:1px solid rgba(16,185,129,.3);}
+    .pill.orange{background:rgba(245,158,11,.15);color:#fcd34d;border:1px solid rgba(245,158,11,.3);}
+    .pill.cyan{background:rgba(6,182,212,.15);color:#67e8f9;border:1px solid rgba(6,182,212,.3);}
+    .pill.red{background:rgba(239,68,68,.15);color:#fca5a5;border:1px solid rgba(239,68,68,.3);}
+    details{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:.75rem;overflow:hidden;}
+    summary{padding:1rem 1.5rem;cursor:pointer;font-weight:600;font-size:.88rem;list-style:none;transition:background .2s;}
+    summary:hover{background:rgba(255,255,255,.03);}details[open] summary{border-bottom:1px solid var(--border);}
+    details > div{padding:1.5rem;font-size:.82rem;color:var(--text-secondary);line-height:1.8;}
+    pre{background:#0d0d18;border:1px solid var(--border);border-radius:var(--radius-sm);padding:1.5rem;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.78rem;line-height:1.8;color:#e2e8f0;}
+    footer{border-top:1px solid var(--border);padding:3rem 2rem;text-align:center;color:var(--text-muted);font-size:.82rem;}
+    footer strong{color:var(--text-secondary);}
+    @media(max-width:768px){.nav-links{display:none;}.two-col{grid-template-columns:1fr;}}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(30px);}to{opacity:1;transform:translateY(0);}}
+    .fade-up{animation:fadeUp .6s ease both;}
+    @keyframes pulse-glow{0%,100%{box-shadow:0 0 20px rgba(124,58,237,.2);}50%{box-shadow:0 0 40px rgba(124,58,237,.5);}}
+    .glow-pulse{animation:pulse-glow 3s ease-in-out infinite;}
+    #backToTop{position:fixed;bottom:2rem;right:2rem;width:44px;height:44px;background:var(--gradient-hero);border:none;border-radius:50%;color:white;font-size:1.3rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .3s;z-index:100;opacity:0;pointer-events:none;}
+    #backToTop.visible{opacity:1;pointer-events:auto;}#backToTop:hover{transform:scale(1.1);}
+    .tabs{display:flex;gap:.5rem;margin-bottom:1.5rem;flex-wrap:wrap;}
+    .tab-btn{background:var(--bg-card);border:1px solid var(--border);color:var(--text-secondary);font-family:'Inter',sans-serif;font-size:.78rem;font-weight:600;padding:8px 18px;border-radius:8px;cursor:pointer;transition:all .2s;}
+    .tab-btn:hover{border-color:var(--border-accent);color:var(--text-primary);}.tab-btn.active{background:var(--accent-purple);border-color:var(--accent-purple);color:white;}
+    .tab-panel{display:none;}.tab-panel.active{display:block;}
+    .two-col{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;}
+    @media(max-width:900px){.two-col{grid-template-columns:1fr;}}
+    .phase-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:1rem;}
+    .phase-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1.5rem;text-align:center;transition:all .3s;}
+    .phase-card:hover{border-color:var(--border-accent);transform:translateY(-2px);}
+    .phase-num{font-size:2rem;font-weight:900;background:var(--gradient-hero);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+    .phase-title{font-weight:700;font-size:.88rem;margin:.5rem 0 .25rem;}
+    .phase-desc{font-size:.72rem;color:var(--text-muted);}
+    .center-tag{text-align:center;margin:.75rem 0 .5rem;}
+    .layer-arrow{text-align:center;padding:.6rem 0;color:var(--text-muted);font-size:1.4rem;letter-spacing:3px;}
+    /* ====== ORDER TRACKING UI ====== */
+    .tracking-demo{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:2.5rem;margin-bottom:2rem;position:relative;overflow:hidden;}
+    .tracking-demo::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#7c3aed,#2563eb,#06b6d4);}
+    .tracking-header{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:2.5rem;}
+    .tracking-order-num{font-size:.72rem;color:var(--text-muted);margin-bottom:.25rem;text-transform:uppercase;letter-spacing:1px;}
+    .tracking-order-val{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:1rem;color:var(--text-primary);}
+    .tracking-courier-box{background:rgba(6,182,212,.08);border:1px solid rgba(6,182,212,.2);border-radius:var(--radius-sm);padding:.75rem 1.25rem;text-align:right;}
+    .tracking-courier-label{font-size:.65rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;}
+    .tracking-courier-name{font-weight:700;font-size:.88rem;color:#67e8f9;}
+    .tracking-awb-label{font-size:.65rem;color:var(--text-muted);margin-top:.2rem;}
+    .tracking-awb-val{font-family:'JetBrains Mono',monospace;font-size:.8rem;color:var(--text-secondary);}
+    .tracking-stepper{display:flex;align-items:flex-start;justify-content:center;gap:0;position:relative;padding:1.5rem 0;}
+    .tracking-stepper::before{content:'';position:absolute;top:34px;left:12.5%;right:12.5%;height:2px;background:var(--border);z-index:0;}
+    .tracking-progress-bar{position:absolute;top:34px;left:12.5%;height:2px;background:var(--gradient-hero);z-index:1;transition:width 1s ease;}
+    .ts-step{display:flex;flex-direction:column;align-items:center;text-align:center;flex:1;position:relative;z-index:2;}
+    .ts-icon{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem;border:2px solid;margin-bottom:.75rem;transition:all .4s;}
+    .ts-icon.done{background:rgba(16,185,129,.2);border-color:#10b981;box-shadow:0 0 16px rgba(16,185,129,.3);}
+    .ts-icon.active{background:rgba(124,58,237,.2);border-color:#7c3aed;box-shadow:0 0 16px rgba(124,58,237,.4);animation:pulse-glow 2s infinite;}
+    .ts-icon.pending{background:rgba(255,255,255,.04);border-color:var(--border);color:var(--text-muted);}
+    .ts-label{font-weight:700;font-size:.78rem;margin-bottom:.2rem;}
+    .ts-date{font-size:.65rem;color:var(--text-muted);}
+    .ts-status-dot{width:8px;height:8px;border-radius:50%;margin:.3rem auto 0;}
+    .ts-status-dot.done{background:#10b981;}.ts-status-dot.active{background:#7c3aed;animation:pulse-dot 1.5s infinite;}
+    .ts-status-dot.pending{background:var(--border);}
+    @keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(1.4);}}
+    .tracking-timeline{margin-top:2.5rem;border-top:1px solid var(--border);padding-top:2rem;}
+    .tracking-timeline-title{font-weight:700;font-size:.85rem;margin-bottom:1.25rem;color:var(--text-secondary);}
+    .tl-item{display:flex;gap:1rem;align-items:flex-start;margin-bottom:1rem;}
+    .tl-dot-col{display:flex;flex-direction:column;align-items:center;flex-shrink:0;}
+    .tl-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;margin-top:4px;}
+    .tl-dot.confirmed{background:#10b981;}.tl-dot.shipped{background:#7c3aed;}.tl-dot.pending-dot{background:var(--border);}
+    .tl-line{width:1px;flex:1;background:var(--border);margin:4px 0;min-height:20px;}
+    .tl-content{flex:1;}
+    .tl-status{font-weight:600;font-size:.8rem;}
+    .tl-desc{font-size:.72rem;color:var(--text-muted);margin-top:2px;}
+    .tl-time{font-size:.65rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace;}
+    .awb-box{background:rgba(124,58,237,.08);border:1px solid rgba(124,58,237,.2);border-radius:var(--radius-sm);padding:1.25rem 1.5rem;margin-top:1.5rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;}
+    .awb-info{display:flex;flex-direction:column;gap:.2rem;}
+    .awb-label{font-size:.65rem;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);}
+    .awb-num{font-family:'JetBrains Mono',monospace;font-size:1.1rem;font-weight:700;color:#c4b5fd;letter-spacing:2px;}
+    .awb-courier{font-size:.75rem;color:var(--text-secondary);}
+    .awb-copy-btn{background:rgba(124,58,237,.2);border:1px solid rgba(124,58,237,.4);color:#c4b5fd;font-size:.75rem;font-weight:600;padding:8px 16px;border-radius:8px;cursor:pointer;font-family:'Inter',sans-serif;transition:all .2s;}
+    .awb-copy-btn:hover{background:rgba(124,58,237,.35);}
+    .tracking-demo-tabs{display:flex;gap:.5rem;margin-bottom:2rem;}
+    .tdt-btn{background:transparent;border:1px solid var(--border);color:var(--text-muted);font-family:'Inter',sans-serif;font-size:.72rem;font-weight:600;padding:6px 14px;border-radius:6px;cursor:pointer;transition:all .2s;}
+    .tdt-btn:hover{border-color:var(--border-accent);color:var(--text-primary);}
+    .tdt-btn.active{background:rgba(124,58,237,.15);border-color:rgba(124,58,237,.5);color:#c4b5fd;}
+    /* GitHub Collab Section */
+    .collab-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1.25rem;margin-bottom:2rem;}
+    .collab-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1.5rem;transition:all .3s;}
+    .collab-card:hover{border-color:var(--border-accent);transform:translateY(-2px);}
+    .collab-card-icon{font-size:1.5rem;margin-bottom:.75rem;}
+    .collab-card-title{font-weight:700;font-size:.88rem;margin-bottom:.5rem;}
+    .collab-card-desc{font-size:.75rem;color:var(--text-muted);line-height:1.6;}
+    .repo-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:2rem;transition:all .3s;position:relative;overflow:hidden;}
+    .repo-card::after{content:'';position:absolute;bottom:0;left:0;right:0;height:3px;}
+    .repo-card.client-repo::after{background:linear-gradient(90deg,#06b6d4,#2563eb);}
+    .repo-card.server-repo::after{background:linear-gradient(90deg,#10b981,#7c3aed);}
+    .repo-card:hover{border-color:var(--border-accent);transform:translateY(-3px);box-shadow:var(--shadow-card);}
+    .repo-name{font-family:'JetBrains Mono',monospace;font-size:1rem;font-weight:700;margin-bottom:.5rem;}
+    .repo-desc{font-size:.78rem;color:var(--text-secondary);margin-bottom:1.25rem;}
+    .repo-stack{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:1.25rem;}
+    .repo-members{font-size:.72rem;color:var(--text-muted);display:flex;flex-direction:column;gap:.3rem;}
+    .repo-member{display:flex;align-items:center;gap:.5rem;}
+    .member-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+    .member-dot.d1{background:#06b6d4;}.member-dot.d2{background:#10b981;}.member-dot.d3{background:#7c3aed;}.member-dot.d4{background:#f59e0b;}
+    .branch-tree{font-family:'JetBrains Mono',monospace;font-size:.72rem;line-height:2;background:rgba(0,0,0,.3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1rem 1.25rem;overflow-x:auto;}
+    .bt-main{color:#6ee7b7;}.bt-develop{color:#93c5fd;}.bt-feat{color:#c4b5fd;}.bt-fix{color:#fcd34d;}.bt-chore{color:#67e8f9;}
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-logo">
+    <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+      <rect width="28" height="28" rx="8" fill="url(#g1)"/>
+      <path d="M8 14.5L12.5 19L20 10" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <defs><linearGradient id="g1" x1="0" y1="0" x2="28" y2="28"><stop stop-color="#7c3aed"/><stop offset="1" stop-color="#2563eb"/></linearGradient></defs>
+    </svg>
+    Picky
+  </div>
+  <ul class="nav-links">
+    <li><a href="#overview">Overview</a></li>
+    <li><a href="#tech-stack">Tech Stack</a></li>
+    <li><a href="#system-arch">System Arch</a></li>
+    <li><a href="#frontend-arch">Frontend</a></li>
+    <li><a href="#backend-arch">Backend</a></li>
+    <li><a href="#service-arch">Services</a></li>
+    <li><a href="#database">Database</a></li>
+    <li><a href="#api">API</a></li>
+    <li><a href="#order-tracking">Order Tracking</a></li>
+    <li><a href="#order-flow">Order Flow</a></li>
+    <li><a href="#folder">Structure</a></li>
+    <li><a href="#github-collab">GitHub</a></li>
+    <li><a href="#roadmap">Roadmap</a></li>
+  </ul>
+  <span class="nav-badge">v1.0 Architecture</span>
+</nav>
+
+<!-- HERO -->
+<section class="hero" id="overview">
+  <div class="hero-grid"></div>
+  <div class="hero-content fade-up">
+    <div class="hero-badge">Single-Vendor E-Commerce &nbsp;&#183;&nbsp; MERN Stack &nbsp;&#183;&nbsp; 2 Separate Repos</div>
+    <h1><span class="gradient">Picky</span><br/>System Architecture</h1>
+    <p class="hero-subtitle">Complete technical blueprint for a production-grade single-vendor e-commerce platform — client repo &amp; server repo, with visual order tracking, WhatsApp notifications, and 60+ REST APIs.</p>
+    <div class="hero-stats">
+      <div class="hero-stat"><div class="hero-stat-num">2</div><div class="hero-stat-label">Repos</div></div>
+      <div class="hero-stat"><div class="hero-stat-num">15+</div><div class="hero-stat-label">Customer Pages</div></div>
+      <div class="hero-stat"><div class="hero-stat-num">10+</div><div class="hero-stat-label">Admin Pages</div></div>
+      <div class="hero-stat"><div class="hero-stat-num">60+</div><div class="hero-stat-label">API Endpoints</div></div>
+      <div class="hero-stat"><div class="hero-stat-num">12+</div><div class="hero-stat-label">DB Collections</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- TECH STACK -->
+<section id="tech-stack">
+  <div class="section-header">
+    <span class="section-tag">&#9889; Technology</span>
+    <h2 class="section-title">Tech Stack</h2>
+    <p class="section-desc">Carefully chosen MERN stack with production-grade tooling for all four layers.</p>
+  </div>
+  <div class="tech-grid">
+    <div class="tech-card frontend">
+      <div class="tech-card-icon">&#9883;</div>
+      <div class="tech-card-title">picky-client &mdash; Customer App</div>
+      <div class="tech-tags"><span class="tech-tag">React 18</span><span class="tech-tag">Vite</span><span class="tech-tag">React Router v6</span><span class="tech-tag">Zustand</span><span class="tech-tag">TanStack Query</span><span class="tech-tag">Axios</span><span class="tech-tag">Framer Motion</span><span class="tech-tag">Vanilla CSS</span></div>
+    </div>
+    <div class="tech-card backend">
+      <div class="tech-card-icon">&#128994;</div>
+      <div class="tech-card-title">picky-server &mdash; API Server</div>
+      <div class="tech-tags"><span class="tech-tag">Node.js 20 LTS</span><span class="tech-tag">Express.js</span><span class="tech-tag">Mongoose</span><span class="tech-tag">JWT + Refresh Tokens</span><span class="tech-tag">Multer</span><span class="tech-tag">Sharp</span><span class="tech-tag">Zod Validation</span><span class="tech-tag">Winston Logger</span></div>
+    </div>
+    <div class="tech-card db">
+      <div class="tech-card-icon">&#128003;</div>
+      <div class="tech-card-title">Database</div>
+      <div class="tech-tags"><span class="tech-tag">MongoDB Atlas</span><span class="tech-tag">Mongoose ODM</span><span class="tech-tag">Indexes</span><span class="tech-tag">Aggregation Pipeline</span><span class="tech-tag">Redis Cache</span><span class="tech-tag">TTL Indexes</span></div>
+    </div>
+    <div class="tech-card infra">
+      <div class="tech-card-icon">&#128276;</div>
+      <div class="tech-card-title">Notifications &amp; OTP</div>
+      <div class="tech-tags"><span class="tech-tag">Twilio WhatsApp</span><span class="tech-tag">Twilio SMS OTP</span><span class="tech-tag">Order Confirmed WA</span><span class="tech-tag">Order Shipped WA</span><span class="tech-tag">Order Delivered WA</span><span class="tech-tag">Nodemailer</span></div>
+    </div>
+    <div class="tech-card tools">
+      <div class="tech-card-icon">&#128666;</div>
+      <div class="tech-card-title">Order Tracking</div>
+      <div class="tech-tags"><span class="tech-tag">3-Step Visual Tracker</span><span class="tech-tag">AWB Display</span><span class="tech-tag">Status Timeline</span><span class="tech-tag">Courier Name</span><span class="tech-tag">Copy AWB</span><span class="tech-tag">WA AWB Notification</span></div>
+    </div>
+    <div class="tech-card tools">
+      <div class="tech-card-icon">&#9729;</div>
+      <div class="tech-card-title">Infrastructure &amp; DevOps</div>
+      <div class="tech-tags"><span class="tech-tag">Cloudinary Images</span><span class="tech-tag">Render / Railway</span><span class="tech-tag">Vercel Frontend</span><span class="tech-tag">GitHub Actions</span><span class="tech-tag">ESLint + Prettier</span><span class="tech-tag">Separate Repos</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- SYSTEM ARCHITECTURE -->
+<section id="system-arch">
+  <div class="section-header">
+    <span class="section-tag">&#127959; Architecture</span>
+    <h2 class="section-title">System Architecture</h2>
+    <p class="section-desc">Modular Monolith &mdash; Controller &rarr; Service &rarr; Repository &rarr; Database</p>
+  </div>
+  <div class="arch-diagram glow-pulse">
+    <p style="text-align:center;font-size:.72rem;color:var(--text-muted);margin-bottom:2rem;letter-spacing:1px;text-transform:uppercase;">Full System Overview &mdash; Request Flow (Top to Bottom)</p>
+    <div class="center-tag"><span class="section-tag">CLIENT LAYER &mdash; picky-client repo</span></div>
+    <div class="arch-row">
+      <div class="arch-box client"><div class="arch-box-title">&#127760; Customer Web App</div><ul class="arch-box-items"><li>React 18 + Vite</li><li>Zustand State</li><li>TanStack Query</li><li>Order Tracker UI</li></ul></div>
+      <div class="arch-box client"><div class="arch-box-title">&#128666; Order Tracking Page</div><ul class="arch-box-items"><li>3-Step Stepper</li><li>AWB Display</li><li>Courier Info</li><li>Status Timeline</li></ul></div>
+    </div>
+    <div class="layer-arrow">&#8597; HTTPS / REST API</div>
+    <div class="center-tag"><span class="section-tag">API GATEWAY LAYER &mdash; picky-server repo</span></div>
+    <div class="arch-row">
+      <div class="arch-box gateway"><div class="arch-box-title">&#128272; Auth Middleware</div><ul class="arch-box-items"><li>JWT Verify</li><li>Role Check</li><li>Rate Limit</li></ul></div>
+      <div class="arch-box gateway" style="flex:2"><div class="arch-box-title">&#128678; Express.js Router</div><ul class="arch-box-items"><li>/api/v1/auth/*</li><li>/api/v1/products/*</li><li>/api/v1/orders/*</li><li>/api/v1/orders/:id/tracking</li><li>/api/v1/admin/*</li></ul></div>
+      <div class="arch-box gateway"><div class="arch-box-title">&#128737; Validation Layer</div><ul class="arch-box-items"><li>Zod Schemas</li><li>Sanitize</li><li>Error Handler</li></ul></div>
+    </div>
+    <div class="layer-arrow">&#8597;</div>
+    <div class="center-tag"><span class="section-tag">SERVICE LAYER &mdash; Business Logic</span></div>
+    <div class="arch-row">
+      <div class="arch-box service"><div class="arch-box-title">&#128100; AuthService</div><ul class="arch-box-items"><li>OTP</li><li>JWT</li></ul></div>
+      <div class="arch-box service"><div class="arch-box-title">&#128230; ProductService</div><ul class="arch-box-items"><li>Catalog</li><li>Search</li></ul></div>
+      <div class="arch-box service"><div class="arch-box-title">&#128722; CartService</div><ul class="arch-box-items"><li>Cart</li><li>Coupon</li></ul></div>
+      <div class="arch-box service"><div class="arch-box-title">&#129534; OrderService</div><ul class="arch-box-items"><li>Checkout</li><li>Status</li><li>AWB Entry</li><li>Tracking</li></ul></div>
+      <div class="arch-box service"><div class="arch-box-title">&#127915; DiscountService</div><ul class="arch-box-items"><li>Coupons</li><li>Offers</li></ul></div>
+      <div class="arch-box service"><div class="arch-box-title">&#128276; NotifService</div><ul class="arch-box-items"><li>WhatsApp</li><li>AWB WA</li></ul></div>
+      <div class="arch-box service"><div class="arch-box-title">&#128202; ReportService</div><ul class="arch-box-items"><li>Sales</li><li>CSV</li></ul></div>
+    </div>
+    <div class="layer-arrow">&#8597;</div>
+    <div class="center-tag"><span class="section-tag">DATA LAYER</span></div>
+    <div class="arch-row">
+      <div class="arch-box data"><div class="arch-box-title">&#127811; MongoDB Atlas</div><ul class="arch-box-items"><li>Primary DB</li><li>Indexes</li></ul></div>
+      <div class="arch-box data"><div class="arch-box-title">&#9889; Redis Cache</div><ul class="arch-box-items"><li>OTP TTL 5min</li><li>Sessions</li></ul></div>
+      <div class="arch-box external"><div class="arch-box-title">&#9729; Cloudinary CDN</div><ul class="arch-box-items"><li>Product Images</li></ul></div>
+      <div class="arch-box external"><div class="arch-box-title">&#128242; Twilio</div><ul class="arch-box-items"><li>WhatsApp</li><li>SMS OTP</li></ul></div>
+    </div>
+  </div>
+  <div class="highlight-box"><strong>Pattern:</strong> Controller &rarr; Service &rarr; Repository &rarr; Database &nbsp;|&nbsp; <strong>Style:</strong> Modular Monolith &nbsp;|&nbsp; <strong>Repos:</strong> picky-client (Vercel) + picky-server (Render/Railway)</div>
+</section>
+
+<!-- FRONTEND ARCHITECTURE -->
+<section id="frontend-arch">
+  <div class="section-header">
+    <span class="section-tag">&#9883; Frontend</span>
+    <h2 class="section-title">Frontend Architecture</h2>
+    <p class="section-desc">picky-client — React 18 + Vite customer app with full order tracking UI.</p>
+  </div>
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('fe','customer')">Customer Pages</button>
+    <button class="tab-btn" onclick="switchTab('fe','state')">State Management</button>
+    <button class="tab-btn" onclick="switchTab('fe','routing')">Routing Map</button>
+  </div>
+  <div id="fe-customer" class="tab-panel active">
+    <div class="arch-diagram">
+      <p style="font-size:.72rem;color:var(--text-muted);margin-bottom:1.5rem;text-transform:uppercase;letter-spacing:1px;">picky-client &mdash; All Customer Pages</p>
+      <div class="arch-row">
+        <div class="arch-box client" style="text-align:center;"><div class="arch-box-title">&#127968; Home</div><ul class="arch-box-items" style="justify-content:center;"><li>Hero Banner</li><li>Featured</li><li>Offers</li></ul></div>
+        <div class="arch-box client" style="text-align:center;"><div class="arch-box-title">&#128193; Categories</div><ul class="arch-box-items" style="justify-content:center;"><li>List</li><li>Filter</li><li>Subcats</li></ul></div>
+        <div class="arch-box client" style="text-align:center;"><div class="arch-box-title">&#128230; Products</div><ul class="arch-box-items" style="justify-content:center;"><li>Grid</li><li>Sort</li><li>Paginate</li></ul></div>
+        <div class="arch-box client" style="text-align:center;"><div class="arch-box-title">&#128269; Search</div><ul class="arch-box-items" style="justify-content:center;"><li>Full-text</li><li>Suggest</li></ul></div>
+        <div class="arch-box client" style="text-align:center;"><div class="arch-box-title">&#128196; Product Detail</div><ul class="arch-box-items" style="justify-content:center;"><li>Gallery</li><li>Attrs</li><li>AddToCart</li></ul></div>
+        <div class="arch-box client" style="text-align:center;"><div class="arch-box-title">&#128722; Cart</div><ul class="arch-box-items" style="justify-content:center;"><li>Items</li><li>Qty</li><li>Coupon</li></ul></div>
+        <div class="arch-box client" style="text-align:center;"><div class="arch-box-title">&#128179; Checkout</div><ul class="arch-box-items" style="justify-content:center;"><li>Address</li><li>COD</li><li>Summary</li></ul></div>
+        <div class="arch-box client" style="text-align:center;"><div class="arch-box-title">&#128242; OTP Login</div><ul class="arch-box-items" style="justify-content:center;"><li>Phone</li><li>OTP</li><li>Verify</li></ul></div>
+        <div class="arch-box client" style="text-align:center;border:1px solid rgba(124,58,237,.5);background:rgba(124,58,237,.15);"><div class="arch-box-title" style="color:#c4b5fd;">&#128666; My Orders + Track</div><ul class="arch-box-items" style="justify-content:center;"><li>Order List</li><li>Status Stepper</li><li>AWB Display</li><li>Courier Info</li></ul></div>
+        <div class="arch-box client" style="text-align:center;"><div class="arch-box-title">&#128100; Account</div><ul class="arch-box-items" style="justify-content:center;"><li>Profile</li><li>Addresses</li></ul></div>
+        <div class="arch-box client" style="text-align:center;"><div class="arch-box-title">&#128222; Contact</div><ul class="arch-box-items" style="justify-content:center;"><li>Form</li><li>WhatsApp</li></ul></div>
+        <div class="arch-box client" style="text-align:center;"><div class="arch-box-title">&#8505; About / Legal</div><ul class="arch-box-items" style="justify-content:center;"><li>About</li><li>Privacy</li><li>T&amp;C</li></ul></div>
+      </div>
+    </div>
+  </div>
+  <div id="fe-state" class="tab-panel">
+    <div class="two-col">
+      <div class="arch-diagram">
+        <p style="font-size:.72rem;color:var(--text-muted);margin-bottom:1.5rem;text-transform:uppercase;letter-spacing:1px;">Zustand Stores</p>
+        <div style="display:flex;flex-direction:column;gap:.75rem;">
+          <div class="arch-box client"><div class="arch-box-title">authStore</div><ul class="arch-box-items"><li>user</li><li>accessToken</li><li>isLoggedIn</li><li>login()</li><li>logout()</li></ul></div>
+          <div class="arch-box service"><div class="arch-box-title">cartStore</div><ul class="arch-box-items"><li>items[]</li><li>total</li><li>coupon</li><li>addItem()</li><li>removeItem()</li></ul></div>
+          <div class="arch-box gateway"><div class="arch-box-title">orderStore</div><ul class="arch-box-items"><li>orders[]</li><li>activeOrder</li><li>trackingInfo</li></ul></div>
+          <div class="arch-box data"><div class="arch-box-title">uiStore</div><ul class="arch-box-items"><li>isLoading</li><li>modal</li><li>toast</li></ul></div>
+        </div>
+      </div>
+      <div class="arch-diagram">
+        <p style="font-size:.72rem;color:var(--text-muted);margin-bottom:1.5rem;text-transform:uppercase;letter-spacing:1px;">TanStack Query Keys</p>
+        <div style="display:flex;flex-direction:column;gap:.75rem;">
+          <div class="arch-box service"><div class="arch-box-title">Query Keys</div><ul class="arch-box-items"><li>['products', filters]</li><li>['product', slug]</li><li>['orders']</li><li>['order', id]</li><li>['order-tracking', id]</li><li>['cart']</li></ul></div>
+          <div class="arch-box external"><div class="arch-box-title">Cache Strategy</div><ul class="arch-box-items"><li>staleTime: 5min</li><li>Tracking: 30s refetch</li><li>Optimistic Updates</li></ul></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="fe-routing" class="tab-panel">
+    <div class="api-table-wrap"><table>
+      <thead><tr><th>Path</th><th>Page / Component</th><th>Auth</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td class="endpoint">/</td><td>Home</td><td><span class="auth-badge auth-pub">Public</span></td><td>Hero + Featured + Offers</td></tr>
+        <tr><td class="endpoint">/categories</td><td>Categories</td><td><span class="auth-badge auth-pub">Public</span></td><td>Category grid</td></tr>
+        <tr><td class="endpoint">/categories/:slug</td><td>Category Products</td><td><span class="auth-badge auth-pub">Public</span></td><td>Filtered product list</td></tr>
+        <tr><td class="endpoint">/products</td><td>All Products</td><td><span class="auth-badge auth-pub">Public</span></td><td>Sort, filter, paginate</td></tr>
+        <tr><td class="endpoint">/products/:slug</td><td>Product Detail</td><td><span class="auth-badge auth-pub">Public</span></td><td>Gallery + attrs + cart</td></tr>
+        <tr><td class="endpoint">/search</td><td>Search Results</td><td><span class="auth-badge auth-pub">Public</span></td><td>Full-text search</td></tr>
+        <tr><td class="endpoint">/cart</td><td>Cart</td><td><span class="auth-badge auth-pub">Public</span></td><td>Guest or logged in</td></tr>
+        <tr><td class="endpoint">/login</td><td>OTP Login</td><td><span class="auth-badge auth-pub">Public</span></td><td>Redirect if logged in</td></tr>
+        <tr><td class="endpoint">/checkout</td><td>Checkout</td><td><span class="auth-badge auth-user">Auth</span></td><td>COD + coupon apply</td></tr>
+        <tr><td class="endpoint">/orders</td><td>My Orders List</td><td><span class="auth-badge auth-user">Auth</span></td><td>Shows all orders with status pill</td></tr>
+        <tr><td class="endpoint" style="color:#c4b5fd;">/orders/:id</td><td style="color:#c4b5fd;font-weight:600;">Order Detail + Tracking</td><td><span class="auth-badge auth-user">Auth</span></td><td style="color:#a78bfa;">3-step stepper + AWB + courier info + timeline</td></tr>
+        <tr><td class="endpoint">/account</td><td>Account</td><td><span class="auth-badge auth-user">Auth</span></td><td>Profile + addresses</td></tr>
+        <tr><td class="endpoint">/contact</td><td>Contact Us</td><td><span class="auth-badge auth-pub">Public</span></td><td></td></tr>
+        <tr><td class="endpoint">/about</td><td>About Us</td><td><span class="auth-badge auth-pub">Public</span></td><td></td></tr>
+        <tr><td class="endpoint">/privacy</td><td>Privacy Policy</td><td><span class="auth-badge auth-pub">Public</span></td><td></td></tr>
+        <tr><td class="endpoint">/terms</td><td>Terms &amp; Conditions</td><td><span class="auth-badge auth-pub">Public</span></td><td></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<!-- BACKEND ARCHITECTURE -->
+<section id="backend-arch">
+  <div class="section-header">
+    <span class="section-tag">&#128994; Backend</span>
+    <h2 class="section-title">Backend Architecture</h2>
+    <p class="section-desc">picky-server — Express.js modular monolith with Controller → Service → Repository → Database</p>
+  </div>
+  <div class="arch-diagram" style="margin-bottom:2rem;">
+    <p style="font-size:.72rem;color:var(--text-muted);margin-bottom:1.5rem;text-transform:uppercase;letter-spacing:1px;">Request Lifecycle &mdash; Single Endpoint</p>
+    <div class="flow-container" style="gap:.4rem;">
+      <div class="flow-step"><div class="flow-box c1">HTTP<br/>Request</div><div class="flow-label">Client</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="flow-box c2">Rate Limiter<br/>Helmet / CORS</div><div class="flow-label">Security</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="flow-box c2">JWT Auth<br/>Role Guard</div><div class="flow-label">Auth</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="flow-box c3">Zod<br/>Validator</div><div class="flow-label">Validation</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="flow-box c3">Controller<br/>(thin)</div><div class="flow-label">Controller</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="flow-box c4">Service<br/>(biz logic)</div><div class="flow-label">Service</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="flow-box c5">Repository<br/>(DB calls)</div><div class="flow-label">Repository</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="flow-box c5">MongoDB</div><div class="flow-label">Database</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="flow-box c6">JSON<br/>Response</div><div class="flow-label">Client</div></div>
+    </div>
+  </div>
+  <div class="two-col">
+    <div>
+      <h3 style="font-size:.9rem;font-weight:700;margin-bottom:1rem;">Backend Modules (picky-server)</h3>
+      <details><summary>&#128272; Auth Module</summary><div><strong>Controllers:</strong> sendOTP, verifyOTP, refreshToken, logout<br/><strong>Service:</strong> OTP generate/verify, JWT sign, session management<br/><strong>External:</strong> Twilio SMS, Redis OTP store (5-min TTL)</div></details>
+      <details><summary>&#128230; Product Module</summary><div><strong>Controllers:</strong> list, detail, search, create, update, delete<br/><strong>Service:</strong> pricing with discount, characteristic filtering, Cloudinary image upload via Multer+Sharp</div></details>
+      <details><summary>&#128722; Cart Module</summary><div><strong>Controllers:</strong> get, addItem, updateQty, removeItem, clear, applyCoupon<br/><strong>Note:</strong> Cart in DB for logged-in users; localStorage for guests → merged on login</div></details>
+      <details open><summary>&#129534; Order Module (includes Tracking)</summary><div><strong>Controllers:</strong> checkout, list, detail, updateStatus, addTracking<br/><strong>Tracking flow:</strong> Admin enters AWB + courier → status becomes "shipped" → WhatsApp with AWB sent → Customer sees AWB in tracking page<br/><strong>Status states:</strong> confirmed → shipped → delivered<br/><strong>statusHistory[]:</strong> Each transition logs timestamp for timeline display</div></details>
+      <details><summary>&#127915; Discount &amp; Coupon Module</summary><div>Product-level, Category-level, Store-wide, and first_order gift (silent — never shown to customer).</div></details>
+      <details><summary>&#128202; Report Module</summary><div>MongoDB Aggregation Pipeline → JSON for charts + CSV download via res.attachment()</div></details>
+    </div>
+    <div>
+      <h3 style="font-size:.9rem;font-weight:700;margin-bottom:1rem;">Middleware Stack (in order)</h3>
+      <div class="arch-diagram" style="padding:1.5rem;">
+        <div style="display:flex;flex-direction:column;gap:.6rem;">
+          <div class="arch-box gateway" style="padding:.75rem 1rem;"><div style="font-weight:600;">1. helmet()</div><div style="font-size:.72rem;color:var(--text-muted);">Security headers — XSS, CSP, HSTS</div></div>
+          <div class="arch-box gateway" style="padding:.75rem 1rem;"><div style="font-weight:600;">2. cors()</div><div style="font-size:.72rem;color:var(--text-muted);">Allowlist: client domain (Vercel)</div></div>
+          <div class="arch-box gateway" style="padding:.75rem 1rem;"><div style="font-weight:600;">3. express-rate-limit</div><div style="font-size:.72rem;color:var(--text-muted);">Global 100/15min • Auth 5/15min • OTP 3/15min</div></div>
+          <div class="arch-box gateway" style="padding:.75rem 1rem;"><div style="font-weight:600;">4. morgan + winston</div><div style="font-size:.72rem;color:var(--text-muted);">HTTP logging • Error logging to files</div></div>
+          <div class="arch-box service" style="padding:.75rem 1rem;"><div style="font-weight:600;">5. authenticateToken</div><div style="font-size:.72rem;color:var(--text-muted);">Verify JWT • Attach req.user</div></div>
+          <div class="arch-box service" style="padding:.75rem 1rem;"><div style="font-weight:600;">6. requireRole('admin')</div><div style="font-size:.72rem;color:var(--text-muted);">Role-based guard for /admin/* routes</div></div>
+          <div class="arch-box data" style="padding:.75rem 1rem;"><div style="font-weight:600;">7. zodValidate(schema)</div><div style="font-size:.72rem;color:var(--text-muted);">Validates body / params / query</div></div>
+          <div class="arch-box external" style="padding:.75rem 1rem;"><div style="font-weight:600;">8. globalErrorHandler</div><div style="font-size:.72rem;color:var(--text-muted);">Catches all errors → structured JSON</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SERVICE ARCHITECTURE -->
+<section id="service-arch">
+  <div class="section-header">
+    <span class="section-tag">&#9881; Services</span>
+    <h2 class="section-title">Service Architecture</h2>
+    <p class="section-desc">8 focused business logic services inside picky-server — each independently evolvable.</p>
+  </div>
+  <div class="arch-diagram">
+    <div class="arch-row">
+      <div class="arch-box service"><div class="arch-box-title">AuthService</div><ul class="arch-box-items"><li>OTP gen/verify</li><li>JWT sign/refresh</li></ul><div style="margin-top:.75rem;font-size:.68rem;color:var(--text-muted);">→ UserRepo, Redis, Twilio</div></div>
+      <div class="arch-box service"><div class="arch-box-title">ProductService</div><ul class="arch-box-items"><li>CRUD</li><li>Char filtering</li><li>Cloudinary</li></ul><div style="margin-top:.75rem;font-size:.68rem;color:var(--text-muted);">→ ProductRepo, Cloudinary</div></div>
+      <div class="arch-box service"><div class="arch-box-title">CartService</div><ul class="arch-box-items"><li>Add/remove</li><li>Stock check</li><li>Coupon apply</li></ul><div style="margin-top:.75rem;font-size:.68rem;color:var(--text-muted);">→ CartRepo, CouponService</div></div>
+      <div class="arch-box service" style="border-color:rgba(124,58,237,.5);background:rgba(124,58,237,.12);"><div class="arch-box-title" style="color:#c4b5fd;">OrderService ⭐</div><ul class="arch-box-items"><li>Checkout</li><li>Stock deduction</li><li>Status update</li><li>AWB entry → WA</li><li>Tracking data</li></ul><div style="margin-top:.75rem;font-size:.68rem;color:var(--text-muted);">→ OrderRepo, NotificationService</div></div>
+      <div class="arch-box service"><div class="arch-box-title">DiscountService</div><ul class="arch-box-items"><li>Product discount</li><li>Category discount</li><li>Store-wide</li></ul></div>
+      <div class="arch-box service"><div class="arch-box-title">CouponService</div><ul class="arch-box-items"><li>Validate code</li><li>Min order check</li><li>Track usage</li></ul></div>
+      <div class="arch-box service"><div class="arch-box-title">NotificationService</div><ul class="arch-box-items"><li>OTP WA/SMS</li><li>Confirmed WA</li><li>Shipped + AWB WA</li><li>Delivered WA</li></ul><div style="margin-top:.75rem;font-size:.68rem;color:var(--text-muted);">→ Twilio WhatsApp API</div></div>
+      <div class="arch-box service"><div class="arch-box-title">ReportService</div><ul class="arch-box-items"><li>Sales aggregation</li><li>CSV export</li></ul></div>
+    </div>
+  </div>
+  <div class="highlight-box"><strong>First-Order Gift (Hidden):</strong> OrderService checks <code>user.orderCount === 0</code> → silent discount. <strong>Never shown to customer, never in API response.</strong></div>
+</section>
+
+<!-- DATABASE -->
+<section id="database">
+  <div class="section-header">
+    <span class="section-tag">&#127811; Database</span>
+    <h2 class="section-title">Database Schema</h2>
+    <p class="section-desc">MongoDB with Mongoose — structured references, strategic indexes, snapshot pattern for orders.</p>
+  </div>
+  <div class="db-grid">
+    <div class="db-table"><div class="db-table-header users">&#128100; users</div><div class="db-table-body">
+      <div class="db-field"><span class="db-field-name pk">_id</span><span class="db-field-type">ObjectId PK</span></div>
+      <div class="db-field"><span class="db-field-name idx">phone</span><span class="db-field-type">String UNIQUE IDX</span></div>
+      <div class="db-field"><span class="db-field-name">name</span><span class="db-field-type">String?</span></div>
+      <div class="db-field"><span class="db-field-name">email</span><span class="db-field-type">String?</span></div>
+      <div class="db-field"><span class="db-field-name">role</span><span class="db-field-type">customer | admin</span></div>
+      <div class="db-field"><span class="db-field-name">orderCount</span><span class="db-field-type">Number default:0</span></div>
+      <div class="db-field"><span class="db-field-name">addresses</span><span class="db-field-type">Address[] embedded</span></div>
+      <div class="db-field"><span class="db-field-name">isActive</span><span class="db-field-type">Boolean</span></div>
+    </div></div>
+    <div class="db-table"><div class="db-table-header catalog">&#128193; categories</div><div class="db-table-body">
+      <div class="db-field"><span class="db-field-name pk">_id</span><span class="db-field-type">ObjectId PK</span></div>
+      <div class="db-field"><span class="db-field-name">name</span><span class="db-field-type">String</span></div>
+      <div class="db-field"><span class="db-field-name idx">slug</span><span class="db-field-type">String UNIQUE IDX</span></div>
+      <div class="db-field"><span class="db-field-name fk">parent</span><span class="db-field-type">ref:categories?</span></div>
+      <div class="db-field"><span class="db-field-name fk">characteristics</span><span class="db-field-type">ref:chars[]</span></div>
+      <div class="db-field"><span class="db-field-name">isActive</span><span class="db-field-type">Boolean</span></div>
+    </div></div>
+    <div class="db-table"><div class="db-table-header products">&#128230; products</div><div class="db-table-body">
+      <div class="db-field"><span class="db-field-name pk">_id</span><span class="db-field-type">ObjectId PK</span></div>
+      <div class="db-field"><span class="db-field-name">name</span><span class="db-field-type">String TEXT IDX</span></div>
+      <div class="db-field"><span class="db-field-name idx">slug</span><span class="db-field-type">String UNIQUE IDX</span></div>
+      <div class="db-field"><span class="db-field-name fk idx">category</span><span class="db-field-type">ref:categories IDX</span></div>
+      <div class="db-field"><span class="db-field-name">basePrice</span><span class="db-field-type">Number</span></div>
+      <div class="db-field"><span class="db-field-name">images</span><span class="db-field-type">String[] CDN urls</span></div>
+      <div class="db-field"><span class="db-field-name">characteristics</span><span class="db-field-type">Map&#60;charId, value&#62;</span></div>
+      <div class="db-field"><span class="db-field-name idx">tags</span><span class="db-field-type">String[] TEXT IDX</span></div>
+      <div class="db-field"><span class="db-field-name">isActive</span><span class="db-field-type">Boolean IDX</span></div>
+    </div></div>
+    <div class="db-table"><div class="db-table-header orders">&#129534; orders</div><div class="db-table-body">
+      <div class="db-field"><span class="db-field-name pk">_id</span><span class="db-field-type">ObjectId PK</span></div>
+      <div class="db-field"><span class="db-field-name idx">orderNumber</span><span class="db-field-type">String UNIQUE IDX</span></div>
+      <div class="db-field"><span class="db-field-name fk idx">user</span><span class="db-field-type">ref:users IDX</span></div>
+      <div class="db-field"><span class="db-field-name">items</span><span class="db-field-type">OrderItem[] SNAPSHOT</span></div>
+      <div class="db-field"><span class="db-field-name">shippingAddress</span><span class="db-field-type">Address embedded</span></div>
+      <div class="db-field"><span class="db-field-name">totalAmount</span><span class="db-field-type">Number</span></div>
+      <div class="db-field"><span class="db-field-name">status</span><span class="db-field-type">confirmed|shipped|delivered</span></div>
+      <div class="db-field"><span class="db-field-name" style="color:#c4b5fd;">trackingId</span><span class="db-field-type">String? AWB number</span></div>
+      <div class="db-field"><span class="db-field-name" style="color:#c4b5fd;">courier</span><span class="db-field-type">String? DTDC etc.</span></div>
+      <div class="db-field"><span class="db-field-name" style="color:#c4b5fd;">statusHistory</span><span class="db-field-type">StatusEvent[] embedded</span></div>
+      <div class="db-field"><span class="db-field-name">paymentMethod</span><span class="db-field-type">COD</span></div>
+      <div class="db-field"><span class="db-field-name">createdAt</span><span class="db-field-type">Date IDX</span></div>
+    </div></div>
+    <div class="db-table"><div class="db-table-header promo">&#127915; discounts</div><div class="db-table-body">
+      <div class="db-field"><span class="db-field-name pk">_id</span><span class="db-field-type">ObjectId PK</span></div>
+      <div class="db-field"><span class="db-field-name">type</span><span class="db-field-type">product|category|store|first_order</span></div>
+      <div class="db-field"><span class="db-field-name">discountType</span><span class="db-field-type">percent | flat</span></div>
+      <div class="db-field"><span class="db-field-name">value</span><span class="db-field-type">Number</span></div>
+      <div class="db-field"><span class="db-field-name">startDate / endDate</span><span class="db-field-type">Date</span></div>
+      <div class="db-field"><span class="db-field-name">isActive</span><span class="db-field-type">Boolean</span></div>
+    </div></div>
+    <div class="db-table"><div class="db-table-header promo">&#127915; coupons</div><div class="db-table-body">
+      <div class="db-field"><span class="db-field-name pk">_id</span><span class="db-field-type">ObjectId PK</span></div>
+      <div class="db-field"><span class="db-field-name idx">code</span><span class="db-field-type">String UNIQUE IDX</span></div>
+      <div class="db-field"><span class="db-field-name">discountType</span><span class="db-field-type">percent | flat</span></div>
+      <div class="db-field"><span class="db-field-name">value</span><span class="db-field-type">Number</span></div>
+      <div class="db-field"><span class="db-field-name">minOrderValue</span><span class="db-field-type">Number?</span></div>
+      <div class="db-field"><span class="db-field-name">maxUsesPerUser</span><span class="db-field-type">Number default:1</span></div>
+      <div class="db-field"><span class="db-field-name">isActive</span><span class="db-field-type">Boolean</span></div>
+    </div></div>
+    <div class="db-table"><div class="db-table-header users">&#128722; carts</div><div class="db-table-body">
+      <div class="db-field"><span class="db-field-name fk idx">user</span><span class="db-field-type">ref:users UNIQUE IDX</span></div>
+      <div class="db-field"><span class="db-field-name">items</span><span class="db-field-type">CartItem[] embedded</span></div>
+      <div class="db-field"><span class="db-field-name fk">coupon</span><span class="db-field-type">ref:coupons?</span></div>
+      <div class="db-field"><span class="db-field-name">updatedAt</span><span class="db-field-type">Date IDX</span></div>
+    </div></div>
+    <div class="db-table"><div class="db-table-header products">&#128218; inventory</div><div class="db-table-body">
+      <div class="db-field"><span class="db-field-name fk idx">product</span><span class="db-field-type">ref:products UNIQUE</span></div>
+      <div class="db-field"><span class="db-field-name">qty</span><span class="db-field-type">Number default:0</span></div>
+      <div class="db-field"><span class="db-field-name">reserved</span><span class="db-field-type">Number default:0</span></div>
+      <div class="db-field"><span class="db-field-name">lowStockThreshold</span><span class="db-field-type">Number default:5</span></div>
+    </div></div>
+    <div class="db-table"><div class="db-table-header misc">&#9889; Redis — OTP / Cache</div><div class="db-table-body">
+      <div class="db-field"><span class="db-field-name">otp:{phone}</span><span class="db-field-type">TTL 300s</span></div>
+      <div class="db-field"><span class="db-field-name">product-list:{hash}</span><span class="db-field-type">TTL 5min</span></div>
+      <div class="db-field"><span class="db-field-name">Max OTP attempts</span><span class="db-field-type">3 then block</span></div>
+    </div></div>
+  </div>
+  <div class="highlight-box" style="margin-top:1.5rem;">
+    <strong>Tracking fields on orders collection:</strong> <code>trackingId</code> (AWB), <code>courier</code> (name), <code>statusHistory[]</code> (each status event with timestamp) — populated when admin enters AWB via admin panel.
+  </div>
+</section>
+
+<!-- API REFERENCE -->
+<section id="api">
+  <div class="section-header">
+    <span class="section-tag">&#128268; API</span>
+    <h2 class="section-title">REST API Reference</h2>
+    <p class="section-desc">Base URL: <code style="font-family:'JetBrains Mono';color:#c4b5fd;">/api/v1</code> — All responses JSON — Auth via Bearer token</p>
+  </div>
+  <div class="api-group">
+    <div class="api-group-title">&#128272; Authentication <span class="pill purple">Auth Module</span></div>
+    <div class="api-table-wrap"><table>
+      <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th><th>Auth</th></tr></thead>
+      <tbody>
+        <tr><td><span class="method POST">POST</span></td><td class="endpoint">/auth/send-otp</td><td>Send OTP to phone via Twilio SMS</td><td><span class="auth-badge auth-pub">Public</span></td></tr>
+        <tr><td><span class="method POST">POST</span></td><td class="endpoint">/auth/verify-otp</td><td>Verify OTP → returns JWT access + refresh tokens</td><td><span class="auth-badge auth-pub">Public</span></td></tr>
+        <tr><td><span class="method POST">POST</span></td><td class="endpoint">/auth/refresh</td><td>Refresh access token using refresh token</td><td><span class="auth-badge auth-pub">Public</span></td></tr>
+        <tr><td><span class="method POST">POST</span></td><td class="endpoint">/auth/logout</td><td>Invalidate refresh token</td><td><span class="auth-badge auth-user">Auth</span></td></tr>
+        <tr><td><span class="method POST">POST</span></td><td class="endpoint">/auth/admin/login</td><td>Admin login with email + password</td><td><span class="auth-badge auth-pub">Public</span></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div class="api-group">
+    <div class="api-group-title">&#128230; Products <span class="pill blue">Product Module</span></div>
+    <div class="api-table-wrap"><table>
+      <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th><th>Auth</th></tr></thead>
+      <tbody>
+        <tr><td><span class="method GET">GET</span></td><td class="endpoint">/products</td><td>List products (filter, sort, paginate, category, char filters)</td><td><span class="auth-badge auth-pub">Public</span></td></tr>
+        <tr><td><span class="method GET">GET</span></td><td class="endpoint">/products/:slug</td><td>Product detail with computed price (after discount)</td><td><span class="auth-badge auth-pub">Public</span></td></tr>
+        <tr><td><span class="method GET">GET</span></td><td class="endpoint">/products/search?q=</td><td>Full-text search on name + tags</td><td><span class="auth-badge auth-pub">Public</span></td></tr>
+        <tr><td><span class="method POST">POST</span></td><td class="endpoint">/admin/products</td><td>Create product (multipart/form-data with images)</td><td><span class="auth-badge auth-admin">Admin</span></td></tr>
+        <tr><td><span class="method PUT">PUT</span></td><td class="endpoint">/admin/products/:id</td><td>Update product details and images</td><td><span class="auth-badge auth-admin">Admin</span></td></tr>
+        <tr><td><span class="method DELETE">DELETE</span></td><td class="endpoint">/admin/products/:id</td><td>Soft-delete product (isActive: false)</td><td><span class="auth-badge auth-admin">Admin</span></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div class="api-group">
+    <div class="api-group-title">&#128722; Cart <span class="pill green">Cart Module</span></div>
+    <div class="api-table-wrap"><table>
+      <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th><th>Auth</th></tr></thead>
+      <tbody>
+        <tr><td><span class="method GET">GET</span></td><td class="endpoint">/cart</td><td>Get user's cart with computed totals</td><td><span class="auth-badge auth-user">Auth</span></td></tr>
+        <tr><td><span class="method POST">POST</span></td><td class="endpoint">/cart/items</td><td>Add item to cart (validates stock)</td><td><span class="auth-badge auth-user">Auth</span></td></tr>
+        <tr><td><span class="method PATCH">PATCH</span></td><td class="endpoint">/cart/items/:productId</td><td>Update item quantity</td><td><span class="auth-badge auth-user">Auth</span></td></tr>
+        <tr><td><span class="method DELETE">DELETE</span></td><td class="endpoint">/cart/items/:productId</td><td>Remove item from cart</td><td><span class="auth-badge auth-user">Auth</span></td></tr>
+        <tr><td><span class="method DELETE">DELETE</span></td><td class="endpoint">/cart</td><td>Clear entire cart</td><td><span class="auth-badge auth-user">Auth</span></td></tr>
+        <tr><td><span class="method POST">POST</span></td><td class="endpoint">/cart/coupon</td><td>Apply coupon code to cart</td><td><span class="auth-badge auth-user">Auth</span></td></tr>
+        <tr><td><span class="method DELETE">DELETE</span></td><td class="endpoint">/cart/coupon</td><td>Remove coupon from cart</td><td><span class="auth-badge auth-user">Auth</span></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div class="api-group">
+    <div class="api-group-title">&#129534; Orders &amp; Tracking <span class="pill orange">Order Module</span> <span class="pill purple">TRACKING</span></div>
+    <div class="api-table-wrap"><table>
+      <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th><th>Auth</th></tr></thead>
+      <tbody>
+        <tr><td><span class="method POST">POST</span></td><td class="endpoint">/orders</td><td>Place order from cart (checkout)</td><td><span class="auth-badge auth-user">Auth</span></td></tr>
+        <tr><td><span class="method GET">GET</span></td><td class="endpoint">/orders</td><td>List my orders</td><td><span class="auth-badge auth-user">Auth</span></td></tr>
+        <tr><td><span class="method GET">GET</span></td><td class="endpoint">/orders/:id</td><td>Order detail with all items</td><td><span class="auth-badge auth-user">Auth</span></td></tr>
+        <tr style="background:rgba(124,58,237,.05);"><td><span class="method GET">GET</span></td><td class="endpoint" style="color:#c4b5fd;">/orders/:id/tracking</td><td style="color:#a78bfa;">Get tracking data — status, AWB, courier, statusHistory[]</td><td><span class="auth-badge auth-user">Auth</span></td></tr>
+        <tr><td><span class="method GET">GET</span></td><td class="endpoint">/admin/orders</td><td>All orders (filter, sort, paginate)</td><td><span class="auth-badge auth-admin">Admin</span></td></tr>
+        <tr><td><span class="method GET">GET</span></td><td class="endpoint">/admin/orders/:id</td><td>Full order detail for admin</td><td><span class="auth-badge auth-admin">Admin</span></td></tr>
+        <tr><td><span class="method PATCH">PATCH</span></td><td class="endpoint">/admin/orders/:id/status</td><td>Update order status (confirmed→shipped→delivered)</td><td><span class="auth-badge auth-admin">Admin</span></td></tr>
+        <tr style="background:rgba(124,58,237,.05);"><td><span class="method PATCH">PATCH</span></td><td class="endpoint" style="color:#c4b5fd;">/admin/orders/:id/tracking</td><td style="color:#a78bfa;">Enter AWB number + courier → triggers WhatsApp to customer</td><td><span class="auth-badge auth-admin">Admin</span></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div class="api-group">
+    <div class="api-group-title">&#127915; Discounts, Coupons, Reports &amp; Settings <span class="pill red">Admin</span></div>
+    <div class="api-table-wrap"><table>
+      <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th><th>Auth</th></tr></thead>
+      <tbody>
+        <tr><td><span class="method POST">POST</span></td><td class="endpoint">/admin/discounts</td><td>Create discount (product/category/store/first_order)</td><td><span class="auth-badge auth-admin">Admin</span></td></tr>
+        <tr><td><span class="method GET">GET</span></td><td class="endpoint">/admin/discounts</td><td>List all discounts</td><td><span class="auth-badge auth-admin">Admin</span></td></tr>
+        <tr><td><span class="method POST">POST</span></td><td class="endpoint">/admin/coupons</td><td>Create coupon code</td><td><span class="auth-badge auth-admin">Admin</span></td></tr>
+        <tr><td><span class="method GET">GET</span></td><td class="endpoint">/admin/coupons</td><td>List all coupons</td><td><span class="auth-badge auth-admin">Admin</span></td></tr>
+        <tr><td><span class="method POST">POST</span></td><td class="endpoint">/coupons/validate</td><td>Validate coupon code at checkout</td><td><span class="auth-badge auth-user">Auth</span></td></tr>
+        <tr><td><span class="method GET">GET</span></td><td class="endpoint">/admin/inventory</td><td>Inventory list (low stock first)</td><td><span class="auth-badge auth-admin">Admin</span></td></tr>
+        <tr><td><span class="method PATCH">PATCH</span></td><td class="endpoint">/admin/inventory/:productId</td><td>Adjust stock quantity</td><td><span class="auth-badge auth-admin">Admin</span></td></tr>
+        <tr><td><span class="method GET">GET</span></td><td class="endpoint">/admin/reports/sales</td><td>Sales report by date range</td><td><span class="auth-badge auth-admin">Admin</span></td></tr>
+        <tr><td><span class="method GET">GET</span></td><td class="endpoint">/admin/reports/export</td><td>Export report as CSV download</td><td><span class="auth-badge auth-admin">Admin</span></td></tr>
+        <tr><td><span class="method GET">GET</span></td><td class="endpoint">/admin/dashboard</td><td>Dashboard KPIs + recent stats</td><td><span class="auth-badge auth-admin">Admin</span></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div class="highlight-box"><strong>Tracking API Response</strong> — <code>GET /orders/:id/tracking</code>:<br/><code>{ status, trackingId, courier, statusHistory: [{ status, timestamp }], estimatedDelivery? }</code></div>
+</section>
+
+<!-- ======================== ORDER TRACKING UI ======================== -->
+<section id="order-tracking">
+  <div class="section-header">
+    <span class="section-tag">&#128666; Order Tracking</span>
+    <h2 class="section-title">Order Tracking — UI Design</h2>
+    <p class="section-desc">Visual step tracker with AWB display, courier info, and status timeline — shown on /orders/:id page.</p>
+  </div>
+
+  <div class="tracking-demo-tabs">
+    <button class="tdt-btn active" onclick="switchTracking('shipped')">&#128666; Shipped State</button>
+    <button class="tdt-btn" onclick="switchTracking('confirmed')">&#9989; Confirmed State</button>
+    <button class="tdt-btn" onclick="switchTracking('delivered')">&#127881; Delivered State</button>
+  </div>
+
+  <!-- SHIPPED STATE -->
+  <div id="track-shipped" class="tracking-demo">
+    <div class="tracking-header">
+      <div>
+        <div class="tracking-order-num">Order Number</div>
+        <div class="tracking-order-val">PKY-20260903-0042</div>
+        <div style="margin-top:.5rem;display:flex;gap:.5rem;flex-wrap:wrap;">
+          <span class="pill orange">COD</span>
+          <span class="pill blue">Rs. 1,299</span>
+          <span class="pill purple">2 items</span>
+        </div>
+      </div>
+      <div class="tracking-courier-box">
+        <div class="tracking-courier-label">Courier Partner</div>
+        <div class="tracking-courier-name">DTDC Express</div>
+        <div class="tracking-awb-label">AWB Number</div>
+        <div class="tracking-awb-val">D123456789IN</div>
+      </div>
+    </div>
+
+    <div class="tracking-stepper" id="stepper-shipped">
+      <div class="tracking-progress-bar" style="width:50%;"></div>
+      <div class="ts-step">
+        <div class="ts-icon done">&#9989;</div>
+        <div class="ts-label">Order Confirmed</div>
+        <div class="ts-date">Sep 3, 10:24 AM</div>
+        <div class="ts-status-dot done"></div>
+      </div>
+      <div class="ts-step">
+        <div class="ts-icon active">&#128666;</div>
+        <div class="ts-label">Shipped</div>
+        <div class="ts-date">Sep 3, 2:10 PM</div>
+        <div class="ts-status-dot active"></div>
+      </div>
+      <div class="ts-step">
+        <div class="ts-icon pending">&#127881;</div>
+        <div class="ts-label">Delivered</div>
+        <div class="ts-date">Pending</div>
+        <div class="ts-status-dot pending"></div>
+      </div>
+    </div>
+
+    <div class="awb-box">
+      <div class="awb-info">
+        <div class="awb-label">Tracking / AWB Number</div>
+        <div class="awb-num">D123456789IN</div>
+        <div class="awb-courier">via DTDC Express &mdash; Track on <a href="#" style="color:#c4b5fd;">dtdc.com</a></div>
+      </div>
+      <button class="awb-copy-btn" onclick="copyAWB('D123456789IN')">&#128203; Copy AWB</button>
+    </div>
+
+    <div class="tracking-timeline">
+      <div class="tracking-timeline-title">&#128337; Status Timeline</div>
+      <div class="tl-item">
+        <div class="tl-dot-col"><div class="tl-dot shipped"></div><div class="tl-line"></div></div>
+        <div class="tl-content">
+          <div class="tl-status">&#128666; Order Shipped</div>
+          <div class="tl-desc">Parcel handed to DTDC Express. AWB: D123456789IN</div>
+          <div class="tl-time">Sep 3, 2026 &nbsp;2:10 PM</div>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot-col"><div class="tl-dot confirmed"></div></div>
+        <div class="tl-content">
+          <div class="tl-status">&#9989; Order Confirmed</div>
+          <div class="tl-desc">Your order was placed and confirmed. Payment: Cash on Delivery.</div>
+          <div class="tl-time">Sep 3, 2026 &nbsp;10:24 AM</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONFIRMED STATE -->
+  <div id="track-confirmed" class="tracking-demo" style="display:none;">
+    <div class="tracking-header">
+      <div>
+        <div class="tracking-order-num">Order Number</div>
+        <div class="tracking-order-val">PKY-20260903-0041</div>
+        <div style="margin-top:.5rem;display:flex;gap:.5rem;flex-wrap:wrap;">
+          <span class="pill orange">COD</span>
+          <span class="pill blue">Rs. 849</span>
+          <span class="pill green">Confirmed</span>
+        </div>
+      </div>
+      <div class="tracking-courier-box" style="background:rgba(16,185,129,.08);border-color:rgba(16,185,129,.2);">
+        <div class="tracking-courier-label">Status</div>
+        <div class="tracking-courier-name" style="color:#6ee7b7;">Processing</div>
+        <div class="tracking-awb-label">AWB Number</div>
+        <div class="tracking-awb-val" style="color:var(--text-muted);">Not yet assigned</div>
+      </div>
+    </div>
+    <div class="tracking-stepper">
+      <div class="tracking-progress-bar" style="width:0%;"></div>
+      <div class="ts-step">
+        <div class="ts-icon active">&#9989;</div>
+        <div class="ts-label">Order Confirmed</div>
+        <div class="ts-date">Sep 3, 9:15 AM</div>
+        <div class="ts-status-dot active"></div>
+      </div>
+      <div class="ts-step">
+        <div class="ts-icon pending">&#128666;</div>
+        <div class="ts-label">Shipped</div>
+        <div class="ts-date">Pending</div>
+        <div class="ts-status-dot pending"></div>
+      </div>
+      <div class="ts-step">
+        <div class="ts-icon pending">&#127881;</div>
+        <div class="ts-label">Delivered</div>
+        <div class="ts-date">Pending</div>
+        <div class="ts-status-dot pending"></div>
+      </div>
+    </div>
+    <div class="awb-box" style="background:rgba(16,185,129,.05);border-color:rgba(16,185,129,.15);">
+      <div class="awb-info">
+        <div class="awb-label">Tracking Info</div>
+        <div class="awb-num" style="font-size:.85rem;color:#6ee7b7;letter-spacing:0;">Awaiting Shipment</div>
+        <div class="awb-courier" style="color:var(--text-muted);">You'll receive a WhatsApp notification with AWB once shipped.</div>
+      </div>
+    </div>
+    <div class="tracking-timeline">
+      <div class="tracking-timeline-title">&#128337; Status Timeline</div>
+      <div class="tl-item">
+        <div class="tl-dot-col"><div class="tl-dot confirmed"></div></div>
+        <div class="tl-content">
+          <div class="tl-status">&#9989; Order Confirmed</div>
+          <div class="tl-desc">Your order was placed and confirmed. Payment: Cash on Delivery.</div>
+          <div class="tl-time">Sep 3, 2026 &nbsp;9:15 AM</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DELIVERED STATE -->
+  <div id="track-delivered" class="tracking-demo" style="display:none;">
+    <div class="tracking-header">
+      <div>
+        <div class="tracking-order-num">Order Number</div>
+        <div class="tracking-order-val">PKY-20260901-0028</div>
+        <div style="margin-top:.5rem;display:flex;gap:.5rem;flex-wrap:wrap;">
+          <span class="pill orange">COD</span>
+          <span class="pill blue">Rs. 2,150</span>
+          <span class="pill green">Delivered</span>
+        </div>
+      </div>
+      <div class="tracking-courier-box" style="background:rgba(16,185,129,.08);border-color:rgba(16,185,129,.2);">
+        <div class="tracking-courier-label">Courier Partner</div>
+        <div class="tracking-courier-name" style="color:#6ee7b7;">ST Courier</div>
+        <div class="tracking-awb-label">AWB Number</div>
+        <div class="tracking-awb-val">STC9876543</div>
+      </div>
+    </div>
+    <div class="tracking-stepper">
+      <div class="tracking-progress-bar" style="width:100%;"></div>
+      <div class="ts-step">
+        <div class="ts-icon done">&#9989;</div>
+        <div class="ts-label">Order Confirmed</div>
+        <div class="ts-date">Sep 1, 11:00 AM</div>
+        <div class="ts-status-dot done"></div>
+      </div>
+      <div class="ts-step">
+        <div class="ts-icon done">&#128666;</div>
+        <div class="ts-label">Shipped</div>
+        <div class="ts-date">Sep 1, 3:30 PM</div>
+        <div class="ts-status-dot done"></div>
+      </div>
+      <div class="ts-step">
+        <div class="ts-icon done">&#127881;</div>
+        <div class="ts-label">Delivered</div>
+        <div class="ts-date">Sep 3, 12:00 PM</div>
+        <div class="ts-status-dot done"></div>
+      </div>
+    </div>
+    <div class="awb-box" style="background:rgba(16,185,129,.08);border-color:rgba(16,185,129,.25);">
+      <div class="awb-info">
+        <div class="awb-label">Tracking / AWB Number</div>
+        <div class="awb-num" style="color:#6ee7b7;">STC9876543</div>
+        <div class="awb-courier">via ST Courier &mdash; Delivered on Sep 3, 2026</div>
+      </div>
+      <span class="pill green">&#127881; Delivered</span>
+    </div>
+    <div class="tracking-timeline">
+      <div class="tracking-timeline-title">&#128337; Status Timeline</div>
+      <div class="tl-item">
+        <div class="tl-dot-col"><div class="tl-dot confirmed"></div><div class="tl-line"></div></div>
+        <div class="tl-content">
+          <div class="tl-status">&#127881; Order Delivered</div>
+          <div class="tl-desc">Your order has been successfully delivered!</div>
+          <div class="tl-time">Sep 3, 2026 &nbsp;12:00 PM</div>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot-col"><div class="tl-dot shipped"></div><div class="tl-line"></div></div>
+        <div class="tl-content">
+          <div class="tl-status">&#128666; Order Shipped</div>
+          <div class="tl-desc">Parcel handed to ST Courier. AWB: STC9876543</div>
+          <div class="tl-time">Sep 1, 2026 &nbsp;3:30 PM</div>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot-col"><div class="tl-dot confirmed"></div></div>
+        <div class="tl-content">
+          <div class="tl-status">&#9989; Order Confirmed</div>
+          <div class="tl-desc">Your order was placed and confirmed. Payment: Cash on Delivery.</div>
+          <div class="tl-time">Sep 1, 2026 &nbsp;11:00 AM</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="two-col" style="margin-top:2rem;">
+    <div>
+      <h3 style="font-size:.9rem;font-weight:700;margin-bottom:1rem;">Tracking Component Architecture (React)</h3>
+      <pre>// pages/OrderDetail.jsx
+import OrderTracker from '../components/order/OrderTracker';
+
+// Component breakdown:
+&lt;OrderDetail&gt;
+  &lt;OrderHeader&gt;         // order#, date, total, status pill
+  &lt;OrderTracker&gt;        // ← THE TRACKING UI
+    &lt;TrackingStepper /&gt; // 3-step visual stepper
+    &lt;AWBBox /&gt;          // AWB number + copy button
+    &lt;StatusTimeline /&gt;  // chronological history list
+  &lt;/OrderTracker&gt;
+  &lt;OrderItems /&gt;        // item list with snapshot prices
+  &lt;ShippingAddress /&gt;  // delivery address
+&lt;/OrderDetail&gt;
+
+// hooks/useOrderTracking.js
+export function useOrderTracking(orderId) {
+  return useQuery({
+    queryKey: ['order-tracking', orderId],
+    queryFn: () => orderService.getTracking(orderId),
+    refetchInterval: 30_000, // poll every 30s while shipped
+    enabled: !!orderId,
+  });
+}</pre>
+    </div>
+    <div>
+      <h3 style="font-size:.9rem;font-weight:700;margin-bottom:1rem;">Backend Tracking API</h3>
+      <pre>// GET /api/v1/orders/:id/tracking
+// Response shape:
+{
+  "success": true,
+  "data": {
+    "orderNumber": "PKY-20260903-0042",
+    "status": "shipped",
+    "trackingId": "D123456789IN",
+    "courier": "DTDC Express",
+    "statusHistory": [
+      {
+        "status": "confirmed",
+        "timestamp": "2026-09-03T04:54:00Z"
+      },
+      {
+        "status": "shipped",
+        "timestamp": "2026-09-03T08:40:00Z"
+      }
+    ]
+  }
+}
+
+// PATCH /api/v1/admin/orders/:id/tracking
+// Body: { trackingId, courier }
+// 1. Updates order: trackingId, courier, status → "shipped"
+// 2. Pushes to statusHistory[]
+// 3. Triggers WhatsApp to customer with AWB</pre>
+    </div>
+  </div>
+</section>
+
+<!-- ORDER FLOW -->
+<section id="order-flow">
+  <div class="section-header">
+    <span class="section-tag">&#128666; Logistics</span>
+    <h2 class="section-title">Order &amp; Shipping Flow</h2>
+    <p class="section-desc">Complete lifecycle from cart to delivery — manual courier dispatch + WhatsApp notifications.</p>
+  </div>
+  <div class="two-col">
+    <div>
+      <h3 style="font-size:.9rem;font-weight:700;margin-bottom:1.5rem;">Full Order Journey</h3>
+      <div class="order-flow">
+        <div class="order-step">
+          <div class="order-step-line"><div class="order-dot" style="background:rgba(6,182,212,.15);border-color:rgba(6,182,212,.5);color:#67e8f9;">1</div><div class="order-connector" style="background:linear-gradient(rgba(6,182,212,.3),rgba(124,58,237,.3));"></div></div>
+          <div class="order-step-content"><div class="order-step-title">Browse &amp; Add to Cart</div><div class="order-step-desc">Browse products, apply filters, add to cart. Guest cart saved in localStorage.</div></div>
+        </div>
+        <div class="order-step">
+          <div class="order-step-line"><div class="order-dot" style="background:rgba(124,58,237,.15);border-color:rgba(124,58,237,.5);color:#c4b5fd;">2</div><div class="order-connector" style="background:linear-gradient(rgba(124,58,237,.3),rgba(37,99,235,.3));"></div></div>
+          <div class="order-step-content"><div class="order-step-title">OTP Login</div><div class="order-step-desc">Phone → OTP via SMS → Verify → JWT issued. Guest cart merges into DB.</div></div>
+        </div>
+        <div class="order-step">
+          <div class="order-step-line"><div class="order-dot" style="background:rgba(37,99,235,.15);border-color:rgba(37,99,235,.5);color:#93c5fd;">3</div><div class="order-connector" style="background:linear-gradient(rgba(37,99,235,.3),rgba(16,185,129,.3));"></div></div>
+          <div class="order-step-content"><div class="order-step-title">Checkout</div><div class="order-step-desc">Enter address, apply coupon, review summary, confirm (COD). First-order gift applied silently.</div></div>
+        </div>
+        <div class="order-step">
+          <div class="order-step-line"><div class="order-dot" style="background:rgba(16,185,129,.15);border-color:rgba(16,185,129,.5);color:#6ee7b7;">4</div><div class="order-connector" style="background:linear-gradient(rgba(16,185,129,.3),rgba(245,158,11,.3));"></div></div>
+          <div class="order-step-content"><div class="order-step-title">&#9989; Status: Confirmed</div><div class="order-step-desc">Order created. Stock deducted. WhatsApp sent to customer with order number.</div></div>
+        </div>
+        <div class="order-step">
+          <div class="order-step-line"><div class="order-dot" style="background:rgba(245,158,11,.15);border-color:rgba(245,158,11,.5);color:#fcd34d;">5</div><div class="order-connector" style="background:linear-gradient(rgba(245,158,11,.3),rgba(124,58,237,.3));"></div></div>
+          <div class="order-step-content"><div class="order-step-title">Admin Drops at Courier Branch</div><div class="order-step-desc">Admin physically takes parcel to DTDC / ST / Professional / Rathimeena. Courier gives AWB number.</div></div>
+        </div>
+        <div class="order-step">
+          <div class="order-step-line"><div class="order-dot" style="background:rgba(124,58,237,.15);border-color:rgba(124,58,237,.5);color:#c4b5fd;">6</div><div class="order-connector" style="background:linear-gradient(rgba(124,58,237,.3),rgba(16,185,129,.3));"></div></div>
+          <div class="order-step-content"><div class="order-step-title">&#128666; Status: Shipped — AWB Entered</div><div class="order-step-desc">Admin enters AWB + courier in Picky admin panel. Status → Shipped. WhatsApp with AWB sent to customer. Customer sees AWB in Order Tracking page.</div></div>
+        </div>
+        <div class="order-step">
+          <div class="order-step-line"><div class="order-dot" style="background:rgba(16,185,129,.15);border-color:rgba(16,185,129,.5);color:#6ee7b7;">7</div></div>
+          <div class="order-step-content"><div class="order-step-title">&#127881; Status: Delivered</div><div class="order-step-desc">Admin marks as Delivered. WhatsApp delivery notification sent. user.orderCount incremented.</div></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <h3 style="font-size:.9rem;font-weight:700;margin-bottom:1.5rem;">WhatsApp Notification Templates</h3>
+      <div style="display:flex;flex-direction:column;gap:1rem;">
+        <div class="arch-box external" style="padding:1.25rem;"><div class="arch-box-title" style="margin-bottom:.75rem;">&#128242; OTP Message</div><pre style="font-size:.72rem;background:rgba(0,0,0,.3);border:none;padding:.75rem;border-radius:6px;">Your Picky OTP is: {{otp}}
+Valid for 5 minutes.
+Do not share with anyone.</pre></div>
+        <div class="arch-box service" style="padding:1.25rem;"><div class="arch-box-title" style="margin-bottom:.75rem;">&#9989; Order Confirmed</div><pre style="font-size:.72rem;background:rgba(0,0,0,.3);border:none;padding:.75rem;border-radius:6px;">Hi {{name}}! Your Picky order
+#{{orderNumber}} is confirmed!
+Total: Rs.{{amount}}
+We'll notify when shipped.</pre></div>
+        <div class="arch-box client" style="padding:1.25rem;"><div class="arch-box-title" style="margin-bottom:.75rem;">&#128666; Order Shipped + AWB</div><pre style="font-size:.72rem;background:rgba(0,0,0,.3);border:none;padding:.75rem;border-radius:6px;">Order #{{orderNumber}} shipped!
+Courier: {{courier}}
+AWB: {{trackingId}}
+Track on: {{courierUrl}}</pre></div>
+        <div class="arch-box data" style="padding:1.25rem;"><div class="arch-box-title" style="margin-bottom:.75rem;">&#127881; Order Delivered</div><pre style="font-size:.72rem;background:rgba(0,0,0,.3);border:none;padding:.75rem;border-radius:6px;">Picky order #{{orderNumber}}
+delivered! Thank you for
+shopping with us!</pre></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOLDER STRUCTURE -->
+<section id="folder">
+  <div class="section-header">
+    <span class="section-tag">&#128193; Structure</span>
+    <h2 class="section-title">Repository Structure</h2>
+    <p class="section-desc">Two separate GitHub repositories — picky-client and picky-server.</p>
+  </div>
+  <div class="two-col">
+    <div>
+      <h3 style="font-size:.9rem;font-weight:700;margin-bottom:1rem;color:#67e8f9;">&#9883; picky-client (GitHub Repo 1)</h3>
+      <div class="tree">
+        <span class="entry"><span class="folder">picky-client/</span>                <span class="comment"># Customer React App (Vercel)</span></span>
+        <span class="entry">|-- <span class="folder">src/</span></span>
+        <span class="entry">|   |-- <span class="folder">components/</span></span>
+        <span class="entry">|   |   |-- <span class="folder">ui/</span>                <span class="comment"># Button, Input, Modal, Toast</span></span>
+        <span class="entry">|   |   |-- <span class="folder">layout/</span>            <span class="comment"># Navbar, Footer</span></span>
+        <span class="entry">|   |   |-- <span class="folder">product/</span>           <span class="comment"># ProductCard, Gallery</span></span>
+        <span class="entry">|   |   |-- <span class="folder">order/</span></span>
+        <span class="entry">|   |   |   |-- <span class="hl">OrderTracker.jsx</span>   <span class="comment"># Main tracking component</span></span>
+        <span class="entry">|   |   |   |-- <span class="hl">TrackingStepper.jsx</span> <span class="comment"># 3-step visual stepper</span></span>
+        <span class="entry">|   |   |   |-- <span class="hl">AWBBox.jsx</span>        <span class="comment"># AWB display + copy</span></span>
+        <span class="entry">|   |   |   |-- <span class="hl">StatusTimeline.jsx</span> <span class="comment"># Chronological history</span></span>
+        <span class="entry">|   |-- <span class="folder">pages/</span></span>
+        <span class="entry">|   |   |-- Home.jsx</span>
+        <span class="entry">|   |   |-- ProductList.jsx</span>
+        <span class="entry">|   |   |-- ProductDetail.jsx</span>
+        <span class="entry">|   |   |-- Cart.jsx</span>
+        <span class="entry">|   |   |-- Checkout.jsx</span>
+        <span class="entry">|   |   |-- Login.jsx</span>
+        <span class="entry">|   |   |-- Orders.jsx</span>
+        <span class="entry">|   |   |-- <span class="hl">OrderDetail.jsx</span>     <span class="comment"># Includes OrderTracker</span></span>
+        <span class="entry">|   |   |-- Account.jsx</span>
+        <span class="entry">|   |-- <span class="folder">store/</span>              <span class="comment"># Zustand</span></span>
+        <span class="entry">|   |   |-- authStore.js</span>
+        <span class="entry">|   |   |-- cartStore.js</span>
+        <span class="entry">|   |   |-- orderStore.js</span>
+        <span class="entry">|   |   |-- uiStore.js</span>
+        <span class="entry">|   |-- <span class="folder">services/</span>           <span class="comment"># Axios API calls</span></span>
+        <span class="entry">|   |   |-- api.js</span>
+        <span class="entry">|   |   |-- auth.service.js</span>
+        <span class="entry">|   |   |-- product.service.js</span>
+        <span class="entry">|   |   |-- cart.service.js</span>
+        <span class="entry">|   |   |-- <span class="hl">order.service.js</span>   <span class="comment"># includes getTracking()</span></span>
+        <span class="entry">|   |-- <span class="folder">hooks/</span>              <span class="comment"># Custom hooks</span></span>
+        <span class="entry">|   |   |-- useAuth.js</span>
+        <span class="entry">|   |   |-- useCart.js</span>
+        <span class="entry">|   |   |-- useProducts.js</span>
+        <span class="entry">|   |   |-- <span class="hl">useOrderTracking.js</span> <span class="comment"># polling hook</span></span>
+        <span class="entry">|   |-- <span class="folder">styles/</span>             <span class="comment"># Global + component CSS</span></span>
+        <span class="entry">|   |-- <span class="folder">utils/</span>              <span class="comment"># formatPrice, slugify</span></span>
+        <span class="entry">|   |-- App.jsx</span>
+        <span class="entry">|   |-- main.jsx</span>
+        <span class="entry">|-- <span class="folder">public/</span></span>
+        <span class="entry">|-- .env.example</span>
+        <span class="entry">|-- .gitignore</span>
+        <span class="entry">|-- vite.config.js</span>
+        <span class="entry">|-- package.json</span>
+        <span class="entry">|-- README.md</span>
+      </div>
+    </div>
+    <div>
+      <h3 style="font-size:.9rem;font-weight:700;margin-bottom:1rem;color:#6ee7b7;">&#128994; picky-server (GitHub Repo 2)</h3>
+      <div class="tree">
+        <span class="entry"><span class="folder">picky-server/</span>                <span class="comment"># Express API (Render/Railway)</span></span>
+        <span class="entry">|-- <span class="folder">src/</span></span>
+        <span class="entry">|   |-- <span class="folder">modules/</span>             <span class="comment"># Feature modules (5-file each)</span></span>
+        <span class="entry">|   |   |-- <span class="folder">auth/</span></span>
+        <span class="entry">|   |   |   |-- auth.controller.js</span>
+        <span class="entry">|   |   |   |-- auth.service.js</span>
+        <span class="entry">|   |   |   |-- auth.repository.js</span>
+        <span class="entry">|   |   |   |-- auth.routes.js</span>
+        <span class="entry">|   |   |   |-- auth.schema.js</span>
+        <span class="entry">|   |   |-- <span class="folder">product/</span>           <span class="comment"># same 5-file pattern</span></span>
+        <span class="entry">|   |   |-- <span class="folder">category/</span></span>
+        <span class="entry">|   |   |-- <span class="folder">cart/</span></span>
+        <span class="entry">|   |   |-- <span class="folder">order/</span></span>
+        <span class="entry">|   |   |   |-- order.controller.js</span>
+        <span class="entry">|   |   |   |-- order.service.js    <span class="comment"># checkout + tracking logic</span></span>
+        <span class="entry">|   |   |   |-- order.repository.js</span>
+        <span class="entry">|   |   |   |-- order.routes.js</span>
+        <span class="entry">|   |   |   |-- order.schema.js</span>
+        <span class="entry">|   |   |-- <span class="folder">discount/</span></span>
+        <span class="entry">|   |   |-- <span class="folder">coupon/</span></span>
+        <span class="entry">|   |   |-- <span class="folder">report/</span></span>
+        <span class="entry">|   |-- <span class="folder">models/</span>              <span class="comment"># Mongoose schemas</span></span>
+        <span class="entry">|   |   |-- user.model.js</span>
+        <span class="entry">|   |   |-- product.model.js</span>
+        <span class="entry">|   |   |-- category.model.js</span>
+        <span class="entry">|   |   |-- order.model.js      <span class="comment"># statusHistory[] field here</span></span>
+        <span class="entry">|   |   |-- cart.model.js</span>
+        <span class="entry">|   |   |-- inventory.model.js</span>
+        <span class="entry">|   |   |-- discount.model.js</span>
+        <span class="entry">|   |   |-- coupon.model.js</span>
+        <span class="entry">|   |-- <span class="folder">middleware/</span></span>
+        <span class="entry">|   |   |-- auth.middleware.js</span>
+        <span class="entry">|   |   |-- role.middleware.js</span>
+        <span class="entry">|   |   |-- validate.middleware.js</span>
+        <span class="entry">|   |   |-- rateLimit.middleware.js</span>
+        <span class="entry">|   |-- <span class="folder">services/</span>            <span class="comment"># External integrations</span></span>
+        <span class="entry">|   |   |-- notification.service.js <span class="comment"># WA + SMS</span></span>
+        <span class="entry">|   |   |-- cloudinary.service.js</span>
+        <span class="entry">|   |-- <span class="folder">config/</span></span>
+        <span class="entry">|   |   |-- db.js               <span class="comment"># MongoDB connection</span></span>
+        <span class="entry">|   |   |-- redis.js            <span class="comment"># Redis connection</span></span>
+        <span class="entry">|   |   |-- env.js              <span class="comment"># Validate .env on startup</span></span>
+        <span class="entry">|   |-- <span class="folder">utils/</span></span>
+        <span class="entry">|   |   |-- appError.js</span>
+        <span class="entry">|   |   |-- apiResponse.js</span>
+        <span class="entry">|   |   |-- paginate.js</span>
+        <span class="entry">|   |-- app.js               <span class="comment"># Express app setup</span></span>
+        <span class="entry">|   |-- server.js            <span class="comment"># Entry point, listen()</span></span>
+        <span class="entry">|-- <span class="folder">logs/</span></span>
+        <span class="entry">|-- .env.example</span>
+        <span class="entry">|-- .gitignore</span>
+        <span class="entry">|-- package.json</span>
+        <span class="entry">|-- README.md</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- GITHUB COLLABORATION -->
+<section id="github-collab">
+  <div class="section-header">
+    <span class="section-tag">&#128201; GitHub</span>
+    <h2 class="section-title">GitHub Collaboration Guide</h2>
+    <p class="section-desc">How 4 developers work together across 2 separate repos — branches, PRs, and workflow.</p>
+  </div>
+
+  <div class="two-col" style="margin-bottom:2rem;">
+    <div class="repo-card client-repo">
+      <div class="repo-name">github.com/your-org/picky-client</div>
+      <div class="repo-desc">Customer-facing React app — deployed to Vercel</div>
+      <div class="repo-stack">
+        <span class="tech-tag">React 18</span><span class="tech-tag">Vite</span><span class="tech-tag">Zustand</span><span class="tech-tag">TanStack Query</span>
+      </div>
+      <div class="repo-members">
+        <div class="repo-member"><div class="member-dot d1"></div><strong>Dev 1 (Lead)</strong> — Customer pages, Cart, OTP Login, Order Tracking UI</div>
+        <div class="repo-member"><div class="member-dot d2"></div>Dev 2 — Supports on shared components, UI review</div>
+        <div class="repo-member"><div class="member-dot d3"></div>Dev 3 — API integration testing (Axios services)</div>
+        <div class="repo-member"><div class="member-dot d4"></div>Dev 4 — Integration of order/tracking APIs</div>
+      </div>
+    </div>
+    <div class="repo-card server-repo">
+      <div class="repo-name">github.com/your-org/picky-server</div>
+      <div class="repo-desc">Express.js REST API — deployed to Render or Railway</div>
+      <div class="repo-stack">
+        <span class="tech-tag">Node.js 20</span><span class="tech-tag">Express</span><span class="tech-tag">MongoDB</span><span class="tech-tag">Redis</span>
+      </div>
+      <div class="repo-members">
+        <div class="repo-member"><div class="member-dot d3"></div><strong>Dev 3 (Lead)</strong> — auth, product, category, cart modules</div>
+        <div class="repo-member"><div class="member-dot d4"></div><strong>Dev 4 (Lead)</strong> — order, discount, coupon, report + tracking</div>
+        <div class="repo-member"><div class="member-dot d1"></div>Dev 1 — API contracts review, test with Postman</div>
+        <div class="repo-member"><div class="member-dot d2"></div>Dev 2 — Admin-related endpoints review</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('gh','branches')">Branch Strategy</button>
+    <button class="tab-btn" onclick="switchTab('gh','workflow')">Daily Workflow</button>
+    <button class="tab-btn" onclick="switchTab('gh','pr')">PR Rules</button>
+    <button class="tab-btn" onclick="switchTab('gh','setup')">First-Time Setup</button>
+  </div>
+
+  <div id="gh-branches" class="tab-panel active">
+    <div class="two-col">
+      <div>
+        <h3 style="font-size:.85rem;font-weight:700;margin-bottom:1rem;color:#67e8f9;">picky-client branch tree</h3>
+        <div class="branch-tree">
+<span class="bt-main">main</span>                              <span style="color:var(--text-muted);"># production (PROTECTED)</span>
+  └── <span class="bt-develop">develop</span>                       <span style="color:var(--text-muted);"># integration branch</span>
+        ├── <span class="bt-feat">feat/client/home-page</span>         <span style="color:var(--text-muted);"># Dev 1</span>
+        ├── <span class="bt-feat">feat/client/cart-flow</span>         <span style="color:var(--text-muted);"># Dev 1</span>
+        ├── <span class="bt-feat">feat/client/order-tracking-ui</span> <span style="color:var(--text-muted);"># Dev 1</span>
+        ├── <span class="bt-feat">feat/client/product-detail</span>    <span style="color:var(--text-muted);"># Dev 1</span>
+        ├── <span class="bt-fix">fix/client/cart-qty-sync</span>      <span style="color:var(--text-muted);"># any dev</span>
+        └── <span class="bt-chore">chore/client/update-deps</span>      <span style="color:var(--text-muted);"># any dev</span>
+        </div>
+      </div>
+      <div>
+        <h3 style="font-size:.85rem;font-weight:700;margin-bottom:1rem;color:#6ee7b7;">picky-server branch tree</h3>
+        <div class="branch-tree">
+<span class="bt-main">main</span>                              <span style="color:var(--text-muted);"># production (PROTECTED)</span>
+  └── <span class="bt-develop">develop</span>                       <span style="color:var(--text-muted);"># integration branch</span>
+        ├── <span class="bt-feat">feat/server/auth-otp</span>          <span style="color:var(--text-muted);"># Dev 3</span>
+        ├── <span class="bt-feat">feat/server/product-crud</span>      <span style="color:var(--text-muted);"># Dev 3</span>
+        ├── <span class="bt-feat">feat/server/cart-module</span>       <span style="color:var(--text-muted);"># Dev 3</span>
+        ├── <span class="bt-feat">feat/server/order-checkout</span>    <span style="color:var(--text-muted);"># Dev 4</span>
+        ├── <span class="bt-feat">feat/server/order-tracking</span>    <span style="color:var(--text-muted);"># Dev 4</span>
+        ├── <span class="bt-feat">feat/server/discount-engine</span>   <span style="color:var(--text-muted);"># Dev 4</span>
+        ├── <span class="bt-feat">feat/server/wa-notifications</span>  <span style="color:var(--text-muted);"># Dev 4</span>
+        ├── <span class="bt-fix">fix/server/otp-rate-limit</span>     <span style="color:var(--text-muted);"># any dev</span>
+        └── <span class="bt-chore">chore/server/add-indexes</span>      <span style="color:var(--text-muted);"># any dev</span>
+        </div>
+      </div>
+    </div>
+    <div class="highlight-box" style="margin-top:1.5rem;">
+      <strong>Branch Naming Rule:</strong> <code>feat/client/&lt;feature&gt;</code> or <code>feat/server/&lt;module&gt;/&lt;feature&gt;</code> &nbsp;|&nbsp;
+      <strong>Commits:</strong> <code>feat(order): add AWB tracking endpoint</code> (Conventional Commits) &nbsp;|&nbsp;
+      <strong>No direct push to main or develop</strong> — always PR.
+    </div>
+  </div>
+
+  <div id="gh-workflow" class="tab-panel">
+    <div class="two-col">
+      <div>
+        <h3 style="font-size:.85rem;font-weight:700;margin-bottom:1rem;">Daily Git Flow (Every Developer)</h3>
+        <pre style="font-size:.73rem;">## START OF DAY — sync with latest develop
+git checkout develop
+git pull origin develop
+
+## Create or switch to your feature branch
+git checkout -b feat/server/order-tracking
+# OR if branch already exists:
+git checkout feat/server/order-tracking
+git rebase develop   # keep up to date
+
+## Work on your feature...
+
+## Save your progress
+git add .
+git commit -m "feat(order): add GET /orders/:id/tracking endpoint"
+
+## Push your branch
+git push origin feat/server/order-tracking
+
+## END OF SPRINT — open Pull Request
+# Target: develop (NEVER main)
+# Title: feat(order): add order tracking API
+# Add description + testing steps</pre>
+      </div>
+      <div>
+        <h3 style="font-size:.85rem;font-weight:700;margin-bottom:1rem;">Commit Message Format</h3>
+        <pre style="font-size:.73rem;"># Format: type(scope): short description
+
+## Types:
+feat     → New feature
+fix      → Bug fix
+chore    → Maintenance, deps, config
+refactor → Code refactoring (no behavior change)
+docs     → Documentation only
+test     → Adding/fixing tests
+
+## Good examples:
+feat(auth): add OTP send via Twilio SMS
+feat(order): add 3-step tracking stepper UI
+feat(order): add AWB entry + WhatsApp trigger
+fix(cart): correct qty validation vs stock
+fix(tracking): show correct courier name
+chore(deps): upgrade mongoose to 8.x
+refactor(order): extract pricing logic to helper
+
+## Bad examples (DON'T DO):
+"update stuff"
+"fix bug"
+"changes"</pre>
+        <div class="highlight-box" style="margin-top:1rem;">
+          <strong>Sync often:</strong> Rebase from develop daily to avoid big merge conflicts. Especially critical when Dev 3 modifies models that Dev 4 depends on.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="gh-pr" class="tab-panel">
+    <div class="collab-grid">
+      <div class="collab-card"><div class="collab-card-icon">&#128269;</div><div class="collab-card-title">Always target develop</div><div class="collab-card-desc">PRs must target the <code>develop</code> branch. Never push directly to <code>main</code>. <code>main</code> is only updated by merging <code>develop</code> at release time.</div></div>
+      <div class="collab-card"><div class="collab-card-icon">&#128202;</div><div class="collab-card-title">Minimum 1 reviewer</div><div class="collab-card-desc">Every PR needs at least 1 team member to review and approve before merging. Rotate reviewers — don't always review the same person.</div></div>
+      <div class="collab-card"><div class="collab-card-icon">&#9989;</div><div class="collab-card-title">CI must pass</div><div class="collab-card-desc">GitHub Actions runs lint + tests on every PR. Green checkmark required before merge. Fix any lint errors locally before pushing.</div></div>
+      <div class="collab-card"><div class="collab-card-icon">&#128221;</div><div class="collab-card-title">PR Description required</div><div class="collab-card-desc">Every PR must have: What changed, Why, How to test it. Use the PR template if available.</div></div>
+      <div class="collab-card"><div class="collab-card-icon">&#128275;</div><div class="collab-card-title">No .env in commits</div><div class="collab-card-desc">Never commit <code>.env</code> files. Only commit <code>.env.example</code>. Secrets go in GitHub Secrets or Vercel/Render environment settings.</div></div>
+      <div class="collab-card"><div class="collab-card-icon">&#127760;</div><div class="collab-card-title">API Contract first</div><div class="collab-card-desc">Dev 3/4 must define the API response shape in README or api.md before implementing. Dev 1 mocks it while waiting so frontend and backend work in parallel.</div></div>
+    </div>
+    <h3 style="font-size:.85rem;font-weight:700;margin:.5rem 0 1rem;">PR Description Template</h3>
+    <pre style="font-size:.73rem;">## What changed
+- Added GET /orders/:id/tracking endpoint
+- Returns status, trackingId, courier, statusHistory[]
+
+## Why
+- Customer needs to see AWB and tracking timeline on order detail page
+
+## How to test
+1. Create an order (POST /orders)
+2. Update tracking via admin: PATCH /admin/orders/:id/tracking
+   Body: { "trackingId": "D123TEST", "courier": "DTDC" }
+3. Call GET /orders/:id/tracking → should return tracking data
+
+## Related
+- Frontend tracking UI: picky-client PR #34</pre>
+  </div>
+
+  <div id="gh-setup" class="tab-panel">
+    <div class="two-col">
+      <div>
+        <h3 style="font-size:.85rem;font-weight:700;margin-bottom:1rem;">First-Time Setup (Client Repo)</h3>
+        <pre style="font-size:.73rem;"># 1. Go to GitHub, create organization (or use personal)
+# 2. Create repo: picky-client
+#    Settings → Branches → Add rule: main → Require PR
+
+# 3. Clone and set up locally
+git clone https://github.com/your-org/picky-client.git
+cd picky-client
+
+# 4. Install deps
+npm install
+
+# 5. Create develop branch (project lead does this once)
+git checkout -b develop
+git push origin develop
+
+# 6. Protect branches on GitHub:
+#    Settings → Branches → Add branch protection:
+#    - main: require PR, require 1 review, require CI pass
+#    - develop: require PR
+
+# 7. Copy env and fill values
+cp .env.example .env
+
+# 8. Start dev server
+npm run dev</pre>
+      </div>
+      <div>
+        <h3 style="font-size:.85rem;font-weight:700;margin-bottom:1rem;">First-Time Setup (Server Repo)</h3>
+        <pre style="font-size:.73rem;"># 1. Create repo: picky-server on GitHub
+# 2. Clone locally
+git clone https://github.com/your-org/picky-server.git
+cd picky-server
+
+# 3. Install deps
+npm install
+
+# 4. Create develop branch
+git checkout -b develop
+git push origin develop
+
+# 5. Copy env and fill all values
+cp .env.example .env
+# Fill: MONGODB_URI, REDIS_URL, JWT secrets,
+#       TWILIO_*, CLOUDINARY_*
+
+# 6. Start dev
+npm run dev
+# Server runs at http://localhost:5000
+
+# 7. Adding a team member (repeat per dev):
+#    GitHub repo Settings → Collaborators
+#    → Add people → enter their GitHub username
+#    → They accept invite → done
+
+# 8. New dev clones and sets up:
+git clone https://github.com/your-org/picky-server.git
+cd picky-server
+npm install
+cp .env.example .env   # Team lead shares actual values via secure channel</pre>
+        <div class="highlight-box" style="margin-top:1rem;"><strong>Share secrets safely:</strong> Never share .env via WhatsApp or email in plaintext. Use a password manager or GitHub Secrets. Team lead sets up Render/Vercel env vars directly in the platform.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ROADMAP -->
+<section id="roadmap">
+  <div class="section-header">
+    <span class="section-tag">&#128506; Roadmap</span>
+    <h2 class="section-title">Development Phases</h2>
+    <p class="section-desc">7-phase plan for a complete v1.0 launch in 12–16 weeks across both repos.</p>
+  </div>
+  <div class="phase-grid">
+    <div class="phase-card"><div class="phase-num">01</div><div class="phase-title">Foundation</div><div class="phase-desc">Week 1–2</div><div style="margin-top:1rem;font-size:.75rem;color:var(--text-secondary);text-align:left;">Both repos created • Branch protection • Auth module • DB schema • API contracts in README • .env setup</div></div>
+    <div class="phase-card"><div class="phase-num">02</div><div class="phase-title">Catalog</div><div class="phase-desc">Week 3–4</div><div style="margin-top:1rem;font-size:.75rem;color:var(--text-secondary);text-align:left;">Product + Category + Characteristics API • Cloudinary images • Customer browsing pages (client)</div></div>
+    <div class="phase-card"><div class="phase-num">03</div><div class="phase-title">Commerce</div><div class="phase-desc">Week 5–7</div><div style="margin-top:1rem;font-size:.75rem;color:var(--text-secondary);text-align:left;">Cart • Checkout • Order placement • Discount engine • Coupon system • First-order gift • Inventory</div></div>
+    <div class="phase-card"><div class="phase-num">04</div><div class="phase-title">Tracking + WA</div><div class="phase-desc">Week 8–9</div><div style="margin-top:1rem;font-size:.75rem;color:var(--text-secondary);text-align:left;">AWB entry API • GET /tracking endpoint • 3-step tracker UI • WhatsApp OTP + Confirmed + Shipped + Delivered</div></div>
+    <div class="phase-card"><div class="phase-num">05</div><div class="phase-title">Admin Complete</div><div class="phase-desc">Week 10–11</div><div style="margin-top:1rem;font-size:.75rem;color:var(--text-secondary);text-align:left;">Admin panel for orders + AWB entry • Dashboard KPIs • Reports • Inventory alerts • Customers</div></div>
+    <div class="phase-card"><div class="phase-num">06</div><div class="phase-title">Polish &amp; QA</div><div class="phase-desc">Week 12–13</div><div style="margin-top:1rem;font-size:.75rem;color:var(--text-secondary);text-align:left;">Mobile responsiveness • Error handling • Edge cases • Cross-browser • Performance • UAT testing</div></div>
+    <div class="phase-card"><div class="phase-num">07</div><div class="phase-title">Deploy</div><div class="phase-desc">Week 14–16</div><div style="margin-top:1rem;font-size:.75rem;color:var(--text-secondary);text-align:left;">Vercel (client) • Render (server) • MongoDB Atlas • GitHub Actions CI/CD • Monitoring • Go Live 🚀</div></div>
+  </div>
+</section>
+
+<footer>
+  <div style="margin-bottom:1rem;">
+    <span class="pill purple" style="margin:0 4px;">Modular Monolith</span>
+    <span class="pill blue" style="margin:0 4px;">MERN Stack</span>
+    <span class="pill green" style="margin:0 4px;">2 Separate Repos</span>
+    <span class="pill orange" style="margin:0 4px;">REST API</span>
+    <span class="pill cyan" style="margin:0 4px;">Order Tracking</span>
+  </div>
+  <p><strong>Picky</strong> — Single-Vendor E-Commerce Architecture v1.0</p>
+  <p style="margin-top:.5rem;font-size:.75rem;">picky-client (Vercel) + picky-server (Render) &nbsp;|&nbsp; See <strong>SKILLS.md</strong> for developer collaboration guide</p>
+</footer>
+
+<button id="backToTop" onclick="window.scrollTo({top:0,behavior:'smooth'})">&#8679;</button>
+
+<script>
+window.addEventListener('scroll', function() {
+  var btn = document.getElementById('backToTop');
+  if (window.scrollY > 400) { btn.classList.add('visible'); }
+  else { btn.classList.remove('visible'); }
+});
+
+function switchTab(group, tab) {
+  var panels = document.querySelectorAll('[id^="' + group + '-"]');
+  panels.forEach(function(p) { p.classList.remove('active'); });
+  var buttons = document.querySelectorAll('.tab-btn');
+  buttons.forEach(function(b) {
+    if (b.getAttribute('onclick') && b.getAttribute('onclick').indexOf("'" + group + "'") !== -1) {
+      b.classList.remove('active');
+    }
+  });
+  var panel = document.getElementById(group + '-' + tab);
+  if (panel) { panel.classList.add('active'); }
+  buttons.forEach(function(b) {
+    if (b.getAttribute('onclick') === "switchTab('" + group + "', '" + tab + "')") {
+      b.classList.add('active');
+    }
+  });
+}
+
+function switchTracking(state) {
+  ['shipped','confirmed','delivered'].forEach(function(s) {
+    var el = document.getElementById('track-' + s);
+    if (el) el.style.display = (s === state) ? 'block' : 'none';
+  });
+  document.querySelectorAll('.tdt-btn').forEach(function(b) {
+    b.classList.toggle('active', b.getAttribute('onclick') === "switchTracking('" + state + "')");
+  });
+}
+
+function copyAWB(awb) {
+  navigator.clipboard.writeText(awb).then(function() {
+    var btn = document.querySelector('.awb-copy-btn');
+    if (btn) { btn.textContent = '✓ Copied!'; setTimeout(function(){ btn.textContent = '📋 Copy AWB'; }, 2000); }
+  });
+}
+
+var observer = new IntersectionObserver(function(entries) {
+  entries.forEach(function(entry) {
+    if (entry.isIntersecting) {
+      entry.target.style.opacity = '1';
+      entry.target.style.transform = 'translateY(0)';
+    }
+  });
+}, { threshold: 0.06 });
+document.querySelectorAll('section').forEach(function(el) {
+  el.style.opacity = '0';
+  el.style.transform = 'translateY(24px)';
+  el.style.transition = 'opacity 0.65s ease, transform 0.65s ease';
+  observer.observe(el);
+});
+var hero = document.querySelector('.hero');
+hero.style.opacity = '1';
+hero.style.transform = 'translateY(0)';
+</script>
+</body>
+</html>

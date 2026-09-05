@@ -30,6 +30,13 @@ const update = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+const updateCharacteristics = async (req, res, next) => {
+  try {
+    const category = await CategoryService.updateCharacteristics(req.params.id, req.body.characteristics);
+    return res.json(ApiResponse.success(category, 'Category characteristics updated'));
+  } catch (err) { next(err); }
+};
+
 const remove = async (req, res, next) => {
   try {
     await CategoryService.softDelete(req.params.id);
@@ -37,4 +44,5 @@ const remove = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { list, detail, create, update, remove };
+module.exports = { list, detail, create, update, updateCharacteristics, remove };
+

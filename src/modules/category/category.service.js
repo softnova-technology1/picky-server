@@ -45,6 +45,12 @@ const CategoryService = {
     return CategoryRepo.update(id, { ...body, image });
   },
 
+  async updateCharacteristics(id, characteristics) {
+    const category = await CategoryRepo.findById(id);
+    if (!category) throw new AppError('Category not found', 404);
+    return CategoryRepo.update(id, { characteristics });
+  },
+
   async softDelete(id) {
     const category = await CategoryRepo.findById(id);
     if (!category) throw new AppError('Category not found', 404);
@@ -53,3 +59,4 @@ const CategoryService = {
 };
 
 module.exports = CategoryService;
+

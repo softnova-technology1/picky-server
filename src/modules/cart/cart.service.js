@@ -17,22 +17,28 @@ const CartService = {
     const product = await Product.findById(productId).lean();
     if (!product || !product.isActive) throw new AppError('Product not found', 404);
 
-    const inventory = await Inventory.findOne({ product: productId }).lean();
-    if (!inventory || inventory.quantity < quantity) throw new AppError('Insufficient stock', 400);
-
     let cart = await CartRepo.findByUser(userId);
     if (!cart) cart = await CartRepo.create(userId);
 
     const existingIdx = cart.items.findIndex((i) => i.product.toString() === productId);
+    const currentQty = existingIdx > -1 ? cart.items[existingIdx].quantity : 0;
+    const requestedTotal = currentQty + quantity;
+
+    const inventory = await Inventory.findOne({ product: productId }).lean();
+    if (!inventory || inventory.quantity < requestedTotal) {
+      const available = inventory ? inventory.quantity : 0;
+      throw new AppError(`Insufficient stock. Only ${available} available (${currentQty} already in cart)`, 400);
+    }
+
     if (existingIdx > -1) {
-      cart.items[existingIdx].quantity += quantity;
+      cart.items[existingIdx].quantity = requestedTotal;
     } else {
       cart.items.push({
         product: productId,
         quantity,
         price: product.discountPrice || product.price,
         name: product.name,
-        image: product.images[0] || null,
+        image: product.images?.[0] || null,
       });
     }
     return CartRepo.save(cart);
@@ -44,6 +50,12 @@ const CartService = {
     if (quantity === 0) return this.removeItem(userId, productId);
     const idx = cart.items.findIndex((i) => i.product.toString() === productId);
     if (idx === -1) throw new AppError('Item not in cart', 404);
+
+    const inventory = await Inventory.findOne({ product: productId }).lean();
+    if (inventory && inventory.quantity < quantity) {
+      throw new AppError(`Insufficient stock. Only ${inventory.quantity} available`, 400);
+    }
+
     cart.items[idx].quantity = quantity;
     return CartRepo.save(cart);
   },

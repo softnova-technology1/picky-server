@@ -4,5 +4,6 @@ const DiscountRepository = {
   findById: (id) => Discount.findById(id).lean(),
   create: (data) => Discount.create(data),
   update: (id, data) => Discount.findByIdAndUpdate(id, data, { new: true }).lean(),
+  delete: (id) => Discount.findByIdAndDelete(id),
 };
 module.exports = DiscountRepository;

@@ -1,6 +1,6 @@
-// TODO (Dev 3): Implement product business logic
 const AppError = require('../../utils/appError');
 const ProductRepo = require('./product.repository');
+const Inventory = require('../../models/inventory.model');
 const { uploadImage } = require('../../services/s3.service');
 const sharp = require('sharp');
 const paginate = require('../../utils/paginate');
@@ -50,7 +50,18 @@ const ProductService = {
       }
     }
 
-    return ProductRepo.create({ ...body, slug, images });
+    const stock = body.stock !== undefined && !isNaN(Number(body.stock)) ? Math.max(0, Number(body.stock)) : 50;
+    const { stock: _stock, ...productData } = body;
+
+    const product = await ProductRepo.create({ ...productData, slug, images });
+
+    // Automatically initialize inventory record
+    await Inventory.create({
+      product: product._id,
+      quantity: stock,
+    });
+
+    return product;
   },
 
   async update(id, body, files) {
@@ -70,9 +81,18 @@ const ProductService = {
       images = [...images, ...newImages];
     }
 
-    const updateData = { ...body, images };
+    const { stock, ...productData } = body;
+    const updateData = { ...productData, images };
     if (body.name && body.name !== product.name) {
       updateData.slug = slugify(body.name);
+    }
+
+    if (stock !== undefined && !isNaN(Number(stock))) {
+      await Inventory.findOneAndUpdate(
+        { product: id },
+        { $set: { quantity: Math.max(0, Number(stock)) } },
+        { upsert: true, new: true }
+      );
     }
 
     return ProductRepo.update(id, updateData);

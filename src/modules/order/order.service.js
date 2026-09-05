@@ -28,8 +28,10 @@ const calculateCartPricing = async (user, cart) => {
     const firstOrderDiscount = await Discount.findOne({
       appliesTo: 'first_order',
       isActive: true,
-      $or: [{ startsAt: null }, { startsAt: { $lte: now } }],
-      $or: [{ endsAt: null }, { endsAt: { $gte: now } }],
+      $and: [
+        { $or: [{ startsAt: null }, { startsAt: { $lte: now } }] },
+        { $or: [{ endsAt: null }, { endsAt: { $gte: now } }] },
+      ],
     }).lean();
 
     if (firstOrderDiscount && subtotal >= (firstOrderDiscount.minOrderAmount || 0)) {
@@ -54,8 +56,13 @@ const OrderService = {
   /**
    * 1. Create Razorpay Order instance for Frontend Checkout Modal
    */
-  async createRazorpayOrder(user, { shippingAddress }) {
-    const cart = await CartRepo.findByUser(user._id);
+  async createRazorpayOrder(user, { shippingAddress, items }) {
+    let cart = await CartRepo.findByUser(user._id);
+    if ((!cart || cart.items.length === 0) && items && items.length > 0) {
+      const CartService = require('../cart/cart.service');
+      await CartService.mergeGuestCart(user._id, items);
+      cart = await CartRepo.findByUser(user._id);
+    }
     if (!cart || cart.items.length === 0) throw new AppError('Cart is empty', 400);
 
     // Validate stock for all items
@@ -92,8 +99,13 @@ const OrderService = {
   /**
    * 2. Verify Razorpay Payment Signature and Create Order in DB
    */
-  async verifyAndCreateOrder(user, { shippingAddress, razorpayOrderId, razorpayPaymentId, razorpaySignature }) {
-    const cart = await CartRepo.findByUser(user._id);
+  async verifyAndCreateOrder(user, { shippingAddress, razorpayOrderId, razorpayPaymentId, razorpaySignature, items }) {
+    let cart = await CartRepo.findByUser(user._id);
+    if ((!cart || cart.items.length === 0) && items && items.length > 0) {
+      const CartService = require('../cart/cart.service');
+      await CartService.mergeGuestCart(user._id, items);
+      cart = await CartRepo.findByUser(user._id);
+    }
     if (!cart || cart.items.length === 0) throw new AppError('Cart is empty', 400);
 
     // Verify cryptographic signature

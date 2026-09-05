@@ -16,8 +16,10 @@ const DiscountService = {
     return Discount.findOne({
       appliesTo: 'first_order',
       isActive: true,
-      $or: [{ startsAt: null }, { startsAt: { $lte: now } }],
-      $or: [{ endsAt: null }, { endsAt: { $gte: now } }],
+      $and: [
+        { $or: [{ startsAt: null }, { startsAt: { $lte: now } }] },
+        { $or: [{ endsAt: null }, { endsAt: { $gte: now } }] },
+      ],
     }).lean();
   },
 
@@ -46,7 +48,7 @@ const DiscountService = {
   async remove(id) {
     const discount = await DiscountRepo.findById(id);
     if (!discount) throw new AppError('Discount rule not found', 404);
-    return DiscountRepo.update(id, { isActive: false });
+    return DiscountRepo.delete(id);
   },
 };
 

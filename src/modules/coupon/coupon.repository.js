@@ -5,5 +5,6 @@ const CouponRepository = {
   findById: (id) => Coupon.findById(id).lean(),
   create: (data) => Coupon.create(data),
   update: (id, data) => Coupon.findByIdAndUpdate(id, data, { new: true }).lean(),
+  delete: (id) => Coupon.findByIdAndDelete(id),
 };
 module.exports = CouponRepository;

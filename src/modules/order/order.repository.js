@@ -8,7 +8,7 @@ const OrderRepository = {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .select('-items -discountType') // hide discountType from customer list
+      .select('-discountType') // hide internal discountType from customer list, keep items for preview
       .lean(),
 
   countByUser: (userId) => Order.countDocuments({ user: userId }),

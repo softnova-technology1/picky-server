@@ -37,7 +37,7 @@ const CouponService = {
   async remove(id) {
     const coupon = await CouponRepo.findById(id);
     if (!coupon) throw new AppError('Coupon not found', 404);
-    return CouponRepo.update(id, { isActive: false });
+    return CouponRepo.delete(id);
   },
 };
 
