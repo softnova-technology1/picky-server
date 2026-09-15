@@ -31,8 +31,10 @@ const refreshToken = async (req, res, next) => {
 
 const logout = async (req, res, next) => {
   try {
-    await AuthService.logout(req.body.refreshToken);
-    return res.json(ApiResponse.success(null, 'Logged out'));
+    // audit fix #8 — use userId from authenticated token, not raw body refresh token
+    const userId = req.user?._id || req.user?.id;
+    await AuthService.logout(userId);
+    return res.json(ApiResponse.success(null, 'Logged out successfully'));
   } catch (err) { next(err); }
 };
 

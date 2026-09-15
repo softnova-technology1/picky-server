@@ -5,6 +5,7 @@ const NotificationService = require('../../services/notification.service');
 const jwt = require('jsonwebtoken');
 
 const OTP_EXPIRE = parseInt(process.env.OTP_EXPIRE_SECONDS) || 300;
+const OTP_MAX_ATTEMPTS = 5; // audit fix #5 — Redis-backed attempt cap per phone
 
 const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
 
@@ -22,13 +23,34 @@ const AuthService = {
   async sendOTP(phone) {
     const otp = generateOTP();
     await redis.set(`otp:${phone}`, otp, 'EX', OTP_EXPIRE);
+    // Reset attempt counter when a new OTP is issued
+    await redis.del(`otp_attempts:${phone}`);
     await NotificationService.sendOTP(phone, otp);
   },
 
   async verifyOTP(phone, otp) {
+    // audit fix #5 — Redis-backed brute-force protection per phone number
+    // Resists IP rotation attacks that bypass the express-rate-limit counter.
+    const attemptKey = `otp_attempts:${phone}`;
+    const attempts = parseInt((await redis.get(attemptKey)) || '0');
+
+    if (attempts >= OTP_MAX_ATTEMPTS) {
+      throw new AppError(
+        `Too many OTP attempts. Request a new OTP to try again.`,
+        429
+      );
+    }
+
     const stored = await redis.get(`otp:${phone}`);
-    if (!stored || stored !== otp) throw new AppError('Invalid or expired OTP', 400);
+    if (!stored || stored !== otp) {
+      // Increment attempt counter — expires with the OTP window
+      await redis.set(attemptKey, attempts + 1, 'EX', OTP_EXPIRE);
+      throw new AppError('Invalid or expired OTP', 400);
+    }
+
+    // Success — clear OTP and attempt counter
     await redis.del(`otp:${phone}`);
+    await redis.del(attemptKey);
 
     let user = await User.findOne({ phone });
     if (!user) user = await User.create({ phone });
@@ -92,12 +114,14 @@ const AuthService = {
     return tokens;
   },
 
-  async logout(token) {
-    if (!token) return;
-    try {
-      const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
-      await redis.del(`refresh:${decoded.id}`);
-    } catch (_) { /* ignore expired token on logout */ }
+  /**
+   * audit fix #8 — logout now takes userId (from JWT via authenticate middleware),
+   * not a raw refresh token from the request body.
+   * The old approach accepted anonymous calls and silently failed on missing tokens.
+   */
+  async logout(userId) {
+    if (!userId) return;
+    await redis.del(`refresh:${userId}`);
   },
 
   async updateProfile(userId, { name, email, defaultAddress }) {

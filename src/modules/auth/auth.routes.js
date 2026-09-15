@@ -9,7 +9,8 @@ router.post('/send-otp', validate(sendOtpSchema), authController.sendOTP);
 router.post('/verify-otp', validate(verifyOtpSchema), authController.verifyOTP);
 router.post('/admin/login', authController.adminLogin);
 router.post('/refresh', validate(refreshTokenSchema), authController.refreshToken);
-router.post('/logout', authController.logout);
+// audit fix #8 — logout now requires a valid access token; anonymous calls return 401
+router.post('/logout', authenticate, authController.logout);
 router.get('/me', authenticate, authController.getMe);
 router.patch('/profile', authenticate, authController.updateProfile);
 

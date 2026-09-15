@@ -81,5 +81,6 @@ const orderSchema = new mongoose.Schema(
 
 orderSchema.index({ user: 1, createdAt: -1 });
 orderSchema.index({ status: 1 });
+// Note: orderNumber is indexed via unique:true on the field definition above.
 
 module.exports = mongoose.model('Order', orderSchema);

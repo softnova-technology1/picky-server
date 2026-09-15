@@ -4,6 +4,7 @@ const helmet = require('helmet');
 const cors = require('cors');
 const morgan = require('morgan');
 const { apiLimiter } = require('./middleware/rateLimit.middleware');
+const correlationId = require('./middleware/correlationId.middleware');
 const AppError = require('./utils/appError');
 const { ApiResponse } = require('./utils/apiResponse');
 const logger = require('./utils/logger');
@@ -32,7 +33,17 @@ app.use(apiLimiter);
 // ─── Request Parsing ─────────────────────────────────────────────────────────
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
-app.use(morgan('dev'));
+// audit fix #10: attach unique X-Request-ID to every request for log tracing
+app.use(correlationId);
+// audit fix #9: only use verbose 'dev' format locally — avoids PII in prod logs
+if (process.env.NODE_ENV !== 'production') {
+  app.use(morgan('dev'));
+} else {
+  app.use(morgan('combined', {
+    stream: { write: (msg) => logger.http(msg.trim()) },
+    skip: (req) => req.url === '/health',
+  }));
+}
 
 // ─── Health Check ────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {

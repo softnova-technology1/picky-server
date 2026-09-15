@@ -18,6 +18,16 @@ const verifyRazorpayOrder = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+// audit fix #2 — Razorpay Webhook handler
+const handleRazorpayWebhook = async (req, res, next) => {
+  try {
+    const signature = req.headers['x-razorpay-signature'];
+    const rawBody = req.body; // Buffer (express.raw middleware used on this route)
+    const result = await OrderService.handleWebhook(rawBody, signature);
+    return res.status(200).json({ received: true, ...result });
+  } catch (err) { next(err); }
+};
+
 const myOrders = async (req, res, next) => {
   try {
     const result = await OrderService.myOrders(getUserId(req), req.query);
@@ -71,6 +81,7 @@ const updateStatus = async (req, res, next) => {
 module.exports = {
   createRazorpayOrder,
   verifyRazorpayOrder,
+  handleRazorpayWebhook,
   myOrders,
   orderDetail,
   getTracking,

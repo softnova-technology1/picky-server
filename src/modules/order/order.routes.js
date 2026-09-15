@@ -6,6 +6,16 @@ const { requireRole } = require('../../middleware/role.middleware');
 const { validate } = require('../../middleware/validate.middleware');
 const { addTrackingSchema, updateStatusSchema } = require('./order.schema');
 
+// ─── Razorpay Webhook (audit fix #2) ───────────────────────────────────────
+// IMPORTANT: This route must use express.raw() — NOT express.json().
+// Razorpay webhook signature is verified against the raw request body bytes.
+// If json() middleware parses it first, the raw body is lost and HMAC fails.
+router.post(
+  '/razorpay/webhook',
+  require('express').raw({ type: 'application/json' }),
+  orderController.handleRazorpayWebhook
+);
+
 // ─── Customer Razorpay Flow (100% Prepaid Online Payment) ───────────────────
 router.post('/razorpay/create-order', authenticate, orderController.createRazorpayOrder);
 router.post('/razorpay/verify', authenticate, orderController.verifyRazorpayOrder);

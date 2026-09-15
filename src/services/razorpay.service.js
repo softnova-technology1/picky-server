@@ -9,6 +9,7 @@ try {
 
 const key_id = process.env.RAZORPAY_KEY_ID || 'rzp_test_picky_dev_key';
 const key_secret = process.env.RAZORPAY_KEY_SECRET || 'picky_razorpay_secret_dev_key';
+const webhook_secret = process.env.RAZORPAY_WEBHOOK_SECRET || '';
 
 let razorpayClient = null;
 const isLiveKey = key_id && !key_id.includes('mock') && !key_id.includes('dev_key');
@@ -65,21 +66,19 @@ const RazorpayService = {
 
   /**
    * Verifies Razorpay payment signature
-   * @param {Object} params
-   * @param {string} params.razorpayOrderId
-   * @param {string} params.razorpayPaymentId
-   * @param {string} params.razorpaySignature
-   * @returns {boolean}
+   * audit fix #3 — removed the `startsWith('order_')` bypass that silently
+   * skipped real signature verification in production (Razorpay always uses 'order_' prefix)
    */
   verifyPaymentSignature({ razorpayOrderId, razorpayPaymentId, razorpaySignature }) {
     if (!razorpayOrderId || !razorpayPaymentId) return false;
 
-    // If using mock order in dev mode
-    if (!isLiveKey || razorpayOrderId.startsWith('order_')) {
-      logger.info(`[MOCK RAZORPAY] Signature verified for dev order ${razorpayOrderId}`);
+    // Only bypass in dev mode with mock credentials
+    if (!isLiveKey) {
+      logger.info(`[MOCK RAZORPAY] Signature bypassed for dev order ${razorpayOrderId}`);
       return true;
     }
 
+    // Production — always verify HMAC SHA256 signature
     const body = `${razorpayOrderId}|${razorpayPaymentId}`;
     const expectedSignature = crypto
       .createHmac('sha256', key_secret)
@@ -87,6 +86,22 @@ const RazorpayService = {
       .digest('hex');
 
     return expectedSignature === razorpaySignature;
+  },
+
+  /**
+   * Verifies Razorpay webhook signature (audit fix #2)
+   * Used in POST /orders/razorpay/webhook to confirm payload is from Razorpay
+   */
+  verifyWebhookSignature(rawBody, signature) {
+    if (!webhook_secret) {
+      logger.warn('[RAZORPAY WEBHOOK] RAZORPAY_WEBHOOK_SECRET not set — skipping verification in dev');
+      return true;
+    }
+    const expected = crypto
+      .createHmac('sha256', webhook_secret)
+      .update(rawBody)
+      .digest('hex');
+    return expected === signature;
   },
 };
 
