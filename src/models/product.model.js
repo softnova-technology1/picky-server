@@ -11,7 +11,9 @@ const productSchema = new mongoose.Schema(
     slug: { type: String, required: true, unique: true, lowercase: true, trim: true },
     description: { type: String, trim: true },
     category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },
-    images: [{ type: String }], // Cloudinary URLs
+    subCategory: { type: String, trim: true },
+    sku: { type: String, trim: true, uppercase: true },
+    images: [{ type: String }], // Cloudinary or CDN URLs
     price: { type: Number, required: true, min: 0 },
     discountPrice: { type: Number, min: 0 }, // null = no discount
     characteristics: [characteristicSchema],
@@ -24,6 +26,8 @@ const productSchema = new mongoose.Schema(
 );
 
 productSchema.index({ category: 1 });
+productSchema.index({ subCategory: 1 });
+productSchema.index({ sku: 1 }, { sparse: true });
 productSchema.index({ isActive: 1 });
 productSchema.index({ name: 'text', tags: 'text', description: 'text' });
 

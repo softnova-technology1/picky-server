@@ -1,3 +1,5 @@
+const dns = require('dns');
+dns.setServers(['8.8.8.8', '1.1.1.1']);
 const mongoose = require('mongoose');
 const logger = require('../utils/logger');
 
@@ -5,8 +7,7 @@ const connectDB = async () => {
   const uri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/picky';
   try {
     const conn = await mongoose.connect(uri, {
-      dbName: 'picky',
-      serverSelectionTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 30000,
     });
     logger.info(`✅ MongoDB connected: ${conn.connection.host} (DB: ${conn.connection.name})`);
   } catch (error) {

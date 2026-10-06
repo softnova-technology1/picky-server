@@ -19,6 +19,9 @@ const discountRoutes = require('./modules/discount/discount.routes');
 const couponRoutes = require('./modules/coupon/coupon.routes');
 const reportRoutes = require('./modules/report/report.routes');
 const wishlistRoutes = require('./modules/wishlist/wishlist.routes');
+const customerRoutes = require('./modules/customer/customer.routes');
+const settingsRoutes = require('./modules/settings/settings.routes');
+const inventoryRoutes = require('./modules/inventory/inventory.routes');
 
 const app = express();
 
@@ -61,6 +64,9 @@ app.use(`${API}/orders`, orderRoutes);
 app.use(`${API}/discounts`, discountRoutes);
 app.use(`${API}/coupons`, couponRoutes);
 app.use(`${API}/reports`, reportRoutes);
+app.use(`${API}/customers`, customerRoutes);
+app.use(`${API}/settings`, settingsRoutes);
+app.use(`${API}/inventory`, inventoryRoutes);
 
 // ─── 404 Handler ─────────────────────────────────────────────────────────────
 app.use((req, res, next) => {

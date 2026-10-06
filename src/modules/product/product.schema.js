@@ -28,6 +28,8 @@ const createProductSchema = z.preprocess(
     name: z.string().min(1, 'Product name required').max(200),
     description: z.string().optional(),
     category: z.string().min(1, 'Category ID required'),
+    subCategory: z.string().optional(),
+    sku: z.string().optional(),
     price: z.coerce.number().positive('Price must be greater than 0'),
     discountPrice: z.preprocess(
       (val) => (val === '' || val === undefined || val === null ? null : val),
@@ -70,6 +72,8 @@ const updateProductSchema = z.preprocess(
     name: z.string().min(1).max(200).optional(),
     description: z.string().optional(),
     category: z.string().min(1).optional(),
+    subCategory: z.string().optional(),
+    sku: z.string().optional(),
     price: z.coerce.number().positive().optional(),
     discountPrice: z.preprocess(
       (val) => (val === '' || val === undefined || val === null ? null : val),

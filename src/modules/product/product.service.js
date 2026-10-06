@@ -53,11 +53,14 @@ const ProductService = {
     const stock = body.stock !== undefined && !isNaN(Number(body.stock)) ? Math.max(0, Number(body.stock)) : 50;
     const { stock: _stock, ...productData } = body;
 
-    const product = await ProductRepo.create({ ...productData, slug, images });
+    const sku = (body.sku || '').trim().toUpperCase() || `PK-${Date.now().toString(36).toUpperCase()}`;
+
+    const product = await ProductRepo.create({ ...productData, sku, slug, images });
 
     // Automatically initialize inventory record
     await Inventory.create({
       product: product._id,
+      sku: product.sku,
       quantity: stock,
     });
 
