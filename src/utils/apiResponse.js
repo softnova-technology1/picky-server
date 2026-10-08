@@ -12,4 +12,15 @@ class ApiResponse {
   }
 }
 
-module.exports = { ApiResponse };
+const sendSuccess = (res, data, statusCode = 200, pagination = null, message = 'Success') => {
+  const payload = { success: true, message, data };
+  if (pagination) payload.pagination = pagination;
+  return res.status(statusCode).json(payload);
+};
+
+const sendError = (res, message = 'Error', statusCode = 500) => {
+  return res.status(statusCode).json({ success: false, message, error: message });
+};
+
+module.exports = { ApiResponse, sendSuccess, sendError };
+

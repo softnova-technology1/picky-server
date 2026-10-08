@@ -1,6 +1,7 @@
 require('dotenv').config();
 const validateEnv = require('./config/env');
 const connectDB = require('./config/db');
+const initializeDB = require('./config/initializeDB');
 const redis = require('./config/redis');
 const app = require('./app');
 const logger = require('./utils/logger');
@@ -13,6 +14,9 @@ const start = async () => {
 
   // 2. Connect to MongoDB
   await connectDB();
+  
+  // 2.5 Initialize DB
+  await initializeDB();
 
   // 3. Connect to Redis (with fallback)
   try {

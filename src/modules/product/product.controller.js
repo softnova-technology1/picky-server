@@ -39,8 +39,8 @@ const update = async (req, res, next) => {
 
 const remove = async (req, res, next) => {
   try {
-    await ProductService.softDelete(req.params.id);
-    return res.json(ApiResponse.success(null, 'Product deactivated'));
+    await ProductService.delete(req.params.id);
+    return res.json(ApiResponse.success(null, 'Product deleted'));
   } catch (err) { next(err); }
 };
 

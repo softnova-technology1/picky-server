@@ -18,6 +18,7 @@ const ProductRepository = {
   countSearch: (q) => Product.countDocuments({ $text: { $search: q }, isActive: true }),
   create: (data) => Product.create(data),
   update: (id, data) => Product.findByIdAndUpdate(id, data, { new: true }).lean(),
+  delete: (id) => Product.findByIdAndDelete(id).lean(),
 };
 
 module.exports = ProductRepository;

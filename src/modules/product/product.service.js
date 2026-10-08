@@ -5,14 +5,27 @@ const { uploadImage } = require('../../services/s3.service');
 const sharp = require('sharp');
 const paginate = require('../../utils/paginate');
 
+const Category = require('../../models/category.model');
+
 const slugify = (name) =>
   name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
 const ProductService = {
   async list(query) {
     const { skip, limit, buildPagination } = paginate(query);
-    const filter = { isActive: true };
-    if (query.category) filter.category = query.category;
+    const filter = {};
+    if (query.includeInactive !== 'true' && query.includeInactive !== true) {
+      filter.isActive = true;
+    }
+    if (query.category) {
+      if (query.category.match(/^[0-9a-fA-F]{24}$/)) {
+        filter.category = query.category;
+      } else {
+        const cat = await Category.findOne({ slug: query.category }).select('_id').lean();
+        if (cat) filter.category = cat._id;
+        else filter.category = '000000000000000000000000'; // Force 0 results if slug not found
+      }
+    }
 
     const [data, total] = await Promise.all([
       ProductRepo.find(filter, skip, limit, query.sort),
@@ -71,8 +84,11 @@ const ProductService = {
     const product = await ProductRepo.findById(id);
     if (!product) throw new AppError('Product not found', 404);
 
-    let images = body.images || product.images || [];
-    if (typeof images === 'string') images = [images];
+    let existingUrls = body.existingImages || [];
+    if (typeof existingUrls === 'string') existingUrls = [existingUrls];
+    
+    // Fallback: if no files and no existing images sent, just keep product.images
+    let images = (existingUrls.length > 0 || (files && files.length > 0)) ? existingUrls : product.images || [];
 
     if (files && files.length > 0) {
       const newImages = [];
@@ -101,10 +117,10 @@ const ProductService = {
     return ProductRepo.update(id, updateData);
   },
 
-  async softDelete(id) {
+  async delete(id) {
     const product = await ProductRepo.findById(id);
     if (!product) throw new AppError('Product not found', 404);
-    return ProductRepo.update(id, { isActive: false });
+    return ProductRepo.delete(id);
   },
 };
 
