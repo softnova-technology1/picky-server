@@ -17,6 +17,19 @@ const authenticate = async (req, res, next) => {
     const user = await User.findById(decoded.id).select('-__v').lean();
     if (!user) throw new AppError('User not found', 401);
 
+    // Security: block disabled accounts even if they hold a valid JWT
+    if (user.isActive === false) {
+      throw new AppError('Account is disabled. Contact support.', 403);
+    }
+
+    // Security: invalidate tokens issued before the last password change
+    if (user.passwordChangedAt) {
+      const changedTimestamp = parseInt(new Date(user.passwordChangedAt).getTime() / 1000, 10);
+      if (decoded.iat < changedTimestamp) {
+        throw new AppError('Password has been changed. Please log in again.', 401);
+      }
+    }
+
     req.user = user;
     next();
   } catch (err) {

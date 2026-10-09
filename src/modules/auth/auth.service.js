@@ -11,10 +11,10 @@ const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString()
 
 const signTokens = (userId) => ({
   accessToken: jwt.sign({ id: userId }, process.env.JWT_ACCESS_SECRET, {
-    expiresIn: process.env.JWT_ACCESS_EXPIRES || '15m',
+    expiresIn: process.env.JWT_ACCESS_EXPIRES || '15d',
   }),
   refreshToken: jwt.sign({ id: userId }, process.env.JWT_REFRESH_SECRET, {
-    expiresIn: process.env.JWT_REFRESH_EXPIRES || '7d',
+    expiresIn: process.env.JWT_REFRESH_EXPIRES || '15d',
   }),
 });
 
@@ -60,7 +60,7 @@ const AuthService = {
       `refresh:${user._id}`,
       tokens.refreshToken,
       'EX',
-      7 * 24 * 60 * 60
+      15 * 24 * 60 * 60
     );
     return { ...tokens, user: { id: user._id, phone: user.phone, name: user.name, role: user.role } };
   },
@@ -80,6 +80,11 @@ const AuthService = {
       throw new AppError('Access denied: Unauthorized admin account', 403);
     }
 
+    // Block disabled admin accounts at login itself
+    if (user.isActive === false) {
+      throw new AppError('This admin account has been disabled. Contact support.', 403);
+    }
+
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
       throw new AppError('Invalid admin credentials', 401);
@@ -90,7 +95,7 @@ const AuthService = {
       `refresh:${user._id}`,
       tokens.refreshToken,
       'EX',
-      7 * 24 * 60 * 60
+      15 * 24 * 60 * 60
     );
 
     return {
@@ -109,8 +114,23 @@ const AuthService = {
     const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
     const stored = await redis.get(`refresh:${decoded.id}`);
     if (!stored || stored !== token) throw new AppError('Invalid refresh token', 401);
+
+    const user = await User.findById(decoded.id).select('isActive passwordChangedAt').lean();
+    if (!user || user.isActive === false) {
+      await redis.del(`refresh:${decoded.id}`);
+      throw new AppError('Account is disabled or does not exist', 401);
+    }
+
+    if (user.passwordChangedAt) {
+      const changedTimestamp = parseInt(new Date(user.passwordChangedAt).getTime() / 1000, 10);
+      if (decoded.iat < changedTimestamp) {
+        await redis.del(`refresh:${decoded.id}`);
+        throw new AppError('Password has been changed. Please log in again.', 401);
+      }
+    }
+
     const tokens = signTokens(decoded.id);
-    await redis.set(`refresh:${decoded.id}`, tokens.refreshToken, 'EX', 7 * 24 * 60 * 60);
+    await redis.set(`refresh:${decoded.id}`, tokens.refreshToken, 'EX', 15 * 24 * 60 * 60);
     return tokens;
   },
 
@@ -121,7 +141,7 @@ const AuthService = {
    */
   async logout(userId) {
     if (!userId) return;
-    await redis.del(`refresh:${userId}`);
+    await redis.del(`refresh:${userId.toString()}`); // ensure string key for Redis
   },
 
   async updateProfile(userId, { name, email, defaultAddress }) {
