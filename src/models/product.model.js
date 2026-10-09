@@ -15,6 +15,7 @@ const productSchema = new mongoose.Schema(
     sku: { type: String, trim: true, uppercase: true },
     images: [{ type: String }], // Cloudinary or CDN URLs
     price: { type: Number, required: true, min: 0 },
+    stock: { type: Number, default: 0, min: 0 },
     discountPrice: { type: Number, min: 0 }, // null = no discount
     characteristics: [characteristicSchema],
     tags: [{ type: String, lowercase: true, trim: true }],

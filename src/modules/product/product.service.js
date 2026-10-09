@@ -55,7 +55,26 @@ const ProductService = {
     if (existing) throw new AppError('Product with this name already exists', 400);
 
     let images = [];
-    if (files && files.length > 0) {
+    let imagePositions = body.imagePositions || [];
+    if (typeof imagePositions === 'string') imagePositions = [imagePositions];
+
+    if (imagePositions.length > 0) {
+      let fileIndex = 0;
+      for (const pos of imagePositions) {
+        if (pos === 'file') {
+          if (files && files[fileIndex]) {
+            const file = files[fileIndex];
+            const buf = await sharp(file.buffer).resize(800, 800, { fit: 'inside' }).webp({ quality: 80 }).toBuffer();
+            const { url } = await uploadImage(buf, 'picky/products');
+            images.push(url);
+            fileIndex++;
+          }
+        } else {
+          images.push(pos);
+        }
+      }
+    } else if (files && files.length > 0) {
+      // Fallback
       for (const file of files) {
         const buf = await sharp(file.buffer).resize(800, 800, { fit: 'inside' }).webp({ quality: 80 }).toBuffer();
         const { url } = await uploadImage(buf, 'picky/products');
@@ -68,7 +87,7 @@ const ProductService = {
 
     const sku = (body.sku || '').trim().toUpperCase() || `PK-${Date.now().toString(36).toUpperCase()}`;
 
-    const product = await ProductRepo.create({ ...productData, sku, slug, images });
+    const product = await ProductRepo.create({ ...productData, sku, slug, images, stock });
 
     // Automatically initialize inventory record
     await Inventory.create({
@@ -84,24 +103,34 @@ const ProductService = {
     const product = await ProductRepo.findById(id);
     if (!product) throw new AppError('Product not found', 404);
 
-    let existingUrls = body.existingImages || [];
-    if (typeof existingUrls === 'string') existingUrls = [existingUrls];
+    let imagePositions = body.imagePositions || [];
+    if (typeof imagePositions === 'string') imagePositions = [imagePositions];
     
-    // Fallback: if no files and no existing images sent, just keep product.images
-    let images = (existingUrls.length > 0 || (files && files.length > 0)) ? existingUrls : product.images || [];
-
-    if (files && files.length > 0) {
-      const newImages = [];
-      for (const file of files) {
-        const buf = await sharp(file.buffer).resize(800, 800, { fit: 'inside' }).webp({ quality: 80 }).toBuffer();
-        const { url } = await uploadImage(buf, 'picky/products');
-        newImages.push(url);
+    let images = [];
+    if (imagePositions.length > 0) {
+      let fileIndex = 0;
+      for (const pos of imagePositions) {
+        if (pos === 'file') {
+          if (files && files[fileIndex]) {
+            const file = files[fileIndex];
+            const buf = await sharp(file.buffer).resize(800, 800, { fit: 'inside' }).webp({ quality: 80 }).toBuffer();
+            const { url } = await uploadImage(buf, 'picky/products');
+            images.push(url);
+            fileIndex++;
+          }
+        } else {
+          images.push(pos);
+        }
       }
-      images = [...images, ...newImages];
+    } else {
+      images = product.images || []; // Fallback
     }
 
-    const { stock, ...productData } = body;
+    const { stock, imagePositions: _ip, ...productData } = body;
     const updateData = { ...productData, images };
+    if (stock !== undefined && !isNaN(Number(stock))) {
+      updateData.stock = Math.max(0, Number(stock));
+    }
     if (body.name && body.name !== product.name) {
       updateData.slug = slugify(body.name);
     }

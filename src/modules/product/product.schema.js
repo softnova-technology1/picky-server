@@ -20,6 +20,9 @@ const createProductSchema = z.preprocess(
       if (copy['tags[]'] && !copy.tags) {
         copy.tags = copy['tags[]'];
       }
+      if (copy['imagePositions[]'] && !copy.imagePositions) {
+        copy.imagePositions = copy['imagePositions[]'];
+      }
       return copy;
     }
     return raw;
@@ -50,6 +53,10 @@ const createProductSchema = z.preprocess(
       value: z.preprocess((v) => Array.isArray(v) ? v.join(', ') : (v === undefined || v === null ? '' : String(v)), z.string()),
     })).optional()),
     tags: z.preprocess(parseTags, z.array(z.string()).optional()),
+    imagePositions: z.preprocess((val) => {
+      if (!val) return [];
+      return Array.isArray(val) ? val : [val];
+    }, z.array(z.string()).optional()),
     isFeatured: z.preprocess(
       (val) => (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val)),
       z.boolean().optional()
@@ -63,6 +70,9 @@ const updateProductSchema = z.preprocess(
       const copy = { ...raw };
       if (copy['tags[]'] && !copy.tags) {
         copy.tags = copy['tags[]'];
+      }
+      if (copy['imagePositions[]'] && !copy.imagePositions) {
+        copy.imagePositions = copy['imagePositions[]'];
       }
       return copy;
     }
@@ -94,6 +104,10 @@ const updateProductSchema = z.preprocess(
       value: z.preprocess((v) => Array.isArray(v) ? v.join(', ') : (v === undefined || v === null ? '' : String(v)), z.string()),
     })).optional()),
     tags: z.preprocess(parseTags, z.array(z.string()).optional()),
+    imagePositions: z.preprocess((val) => {
+      if (!val) return [];
+      return Array.isArray(val) ? val : [val];
+    }, z.array(z.string()).optional()),
     isFeatured: z.preprocess(
       (val) => (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val)),
       z.boolean().optional()

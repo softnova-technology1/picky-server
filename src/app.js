@@ -81,9 +81,31 @@ app.use((req, res, next) => {
 
 // ─── Global Error Handler ────────────────────────────────────────────────────
 app.use((err, req, res, _next) => {
-  const statusCode = err.statusCode || 500;
-  const message = err.isOperational ? err.message : 'Internal Server Error';
-  if (!err.isOperational) logger.error(err);
+  let statusCode = err.statusCode || 500;
+  let message = err.isOperational ? err.message : 'Internal Server Error';
+
+  // Handle Mongoose Validation Errors
+  if (err.name === 'ValidationError') {
+    const errors = Object.values(err.errors).map((el) => el.message);
+    message = `Invalid input data: ${errors.join('. ')}`;
+    statusCode = 400;
+  }
+  // Handle Mongoose Duplicate Key
+  else if (err.code === 11000) {
+    const field = Object.keys(err.keyValue)[0];
+    message = `Duplicate field value entered for ${field}. Please use another value!`;
+    statusCode = 400;
+  }
+  // Handle Mongoose CastError
+  else if (err.name === 'CastError') {
+    message = `Invalid ${err.path}: ${err.value}`;
+    statusCode = 400;
+  }
+
+  if (!err.isOperational && statusCode === 500) {
+    logger.error(err);
+  }
+  
   res.status(statusCode).json(ApiResponse.error(message, statusCode));
 });
 

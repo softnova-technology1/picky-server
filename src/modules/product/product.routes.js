@@ -15,8 +15,8 @@ router.get('/search', productController.search);
 router.get('/:slug', productController.detail);
 
 // Admin
-router.post('/', authenticate, requireRole('admin'), upload.array('images', 10), validate(createProductSchema), productController.create);
-router.put('/:id', authenticate, requireRole('admin'), upload.array('images', 10), validate(updateProductSchema), productController.update);
+router.post('/', authenticate, requireRole('admin'), upload.array('images', 15), validate(createProductSchema), productController.create);
+router.put('/:id', authenticate, requireRole('admin'), upload.array('images', 15), validate(updateProductSchema), productController.update);
 router.delete('/:id', authenticate, requireRole('admin'), productController.remove);
 
 module.exports = router;
