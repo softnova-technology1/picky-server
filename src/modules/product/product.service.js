@@ -26,6 +26,13 @@ const ProductService = {
         else filter.category = '000000000000000000000000'; // Force 0 results if slug not found
       }
     }
+    
+    // Price filtering
+    if (query.minPrice !== undefined || query.maxPrice !== undefined) {
+      filter.basePrice = {};
+      if (query.minPrice !== undefined) filter.basePrice.$gte = Number(query.minPrice);
+      if (query.maxPrice !== undefined) filter.basePrice.$lte = Number(query.maxPrice);
+    }
 
     const [data, total] = await Promise.all([
       ProductRepo.find(filter, skip, limit, query.sort),

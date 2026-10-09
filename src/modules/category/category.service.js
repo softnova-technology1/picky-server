@@ -41,7 +41,8 @@ const CategoryService = {
       const result = await uploadImage(buf, 'picky/categories');
       image = result.url;
     }
-    if (body.name) body.slug = slugify(body.name);
+    // Prevent updating the slug so frontend constants don't break
+    delete body.slug;
     return CategoryRepo.update(id, { ...body, image });
   },
 
