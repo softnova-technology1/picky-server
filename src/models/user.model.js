@@ -27,6 +27,7 @@ const userSchema = new mongoose.Schema(
     ],
     orderCount: { type: Number, default: 0 },
     isActive: { type: Boolean, default: true },
+    passwordChangedAt: { type: Date },
   },
   { timestamps: true }
 );
@@ -36,6 +37,8 @@ userSchema.pre('save', async function (next) {
   if (!this.isModified('password') || !this.password) return next();
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
+  // Mark passwordChangedAt so tokens issued before this time are immediately invalidated
+  this.passwordChangedAt = new Date();
   next();
 });
 

@@ -18,26 +18,28 @@ async function createAdmin() {
     });
     console.log('✅ Connected to MongoDB Atlas successfully.');
 
-    const adminEmail = 'admin@picky.com';
-    const adminPassword = 'Admin@Picky2026!';
+    const adminEmail = (process.env.ADMIN_EMAIL || 'admin@picky.com').toLowerCase().trim();
+    const adminPassword = process.env.ADMIN_PASSWORD || 'softnova-2026';
+    const adminName = process.env.ADMIN_NAME || 'Store Administrator';
+    const adminPhone = process.env.ADMIN_PHONE || '+919876543210';
 
     let admin = await User.findOne({ email: adminEmail });
 
     if (admin) {
       console.log(`⚠️ User with email "${adminEmail}" already exists. Updating credentials...`);
-      admin.name = 'Store Administrator';
+      admin.name = adminName;
       admin.role = 'admin';
       admin.password = adminPassword; // Triggers pre('save') bcrypt hashing
       admin.isActive = true;
-      if (!admin.phone) admin.phone = '9876543210';
+      admin.phone = adminPhone;
       await admin.save();
-      console.log('✅ Existing user upgraded to Administrator and password updated.');
+      console.log('✅ Existing user upgraded to Administrator and credentials updated.');
     } else {
       console.log(`Creating new Administrator account: ${adminEmail}...`);
       admin = new User({
-        name: 'Store Administrator',
+        name: adminName,
         email: adminEmail,
-        phone: '9876543210',
+        phone: adminPhone,
         password: adminPassword, // Triggers pre('save') bcrypt hashing
         role: 'admin',
         isActive: true,
