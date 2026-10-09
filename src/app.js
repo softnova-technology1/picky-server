@@ -13,6 +13,7 @@ const logger = require('./utils/logger');
 const authRoutes = require('./modules/auth/auth.routes');
 const productRoutes = require('./modules/product/product.routes');
 const categoryRoutes = require('./modules/category/category.routes');
+const subcategoryRoutes = require('./modules/subcategory/subcategory.routes');
 const cartRoutes = require('./modules/cart/cart.routes');
 const orderRoutes = require('./modules/order/order.routes');
 const discountRoutes = require('./modules/discount/discount.routes');
@@ -22,6 +23,8 @@ const wishlistRoutes = require('./modules/wishlist/wishlist.routes');
 const customerRoutes = require('./modules/customer/customer.routes');
 const settingsRoutes = require('./modules/settings/settings.routes');
 const inventoryRoutes = require('./modules/inventory/inventory.routes');
+const customizationRoutes = require('./modules/customization/customization.routes');
+const uploadRoutes = require('./modules/upload/upload.routes');
 
 const app = express();
 
@@ -34,8 +37,8 @@ app.use(cors({
 app.use(apiLimiter);
 
 // ─── Request Parsing ─────────────────────────────────────────────────────────
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' })); // Increased limit for base64 images during migration/upload
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // audit fix #10: attach unique X-Request-ID to every request for log tracing
 app.use(correlationId);
 // audit fix #9: only use verbose 'dev' format locally — avoids PII in prod logs
@@ -58,6 +61,7 @@ const API = '/api/v1';
 app.use(`${API}/auth`, authRoutes);
 app.use(`${API}/products`, productRoutes);
 app.use(`${API}/categories`, categoryRoutes);
+app.use(`${API}/subcategories`, subcategoryRoutes);
 app.use(`${API}/cart`, cartRoutes);
 app.use(`${API}/wishlist`, wishlistRoutes);
 app.use(`${API}/orders`, orderRoutes);
@@ -67,6 +71,8 @@ app.use(`${API}/reports`, reportRoutes);
 app.use(`${API}/customers`, customerRoutes);
 app.use(`${API}/settings`, settingsRoutes);
 app.use(`${API}/inventory`, inventoryRoutes);
+app.use(`${API}/customization`, customizationRoutes);
+app.use(`${API}/upload`, uploadRoutes);
 
 // ─── 404 Handler ─────────────────────────────────────────────────────────────
 app.use((req, res, next) => {

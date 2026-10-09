@@ -6,7 +6,11 @@ const paginate = require('../../utils/paginate');
 const CustomerService = {
   async list(query = {}) {
     const { skip, limit, buildPagination } = paginate(query);
-    const filter = { role: 'customer' };
+    const filter = {};
+
+    if (query.role && query.role !== 'all') {
+      filter.role = query.role;
+    }
 
     if (query.search) {
       const q = query.search.trim();
@@ -62,10 +66,10 @@ const CustomerService = {
   },
 
   async getById(id) {
-    const user = await User.findOne({ _id: id, role: 'customer' })
+    const user = await User.findById(id)
       .select('-password -__v')
       .lean();
-    if (!user) throw new AppError('Customer not found', 404);
+    if (!user) throw new AppError('User not found', 404);
 
     const orders = await Order.find({ user: id })
       .sort({ createdAt: -1 })

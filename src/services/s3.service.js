@@ -59,9 +59,9 @@ const uploadImage = async (buffer, folder = 'products', contentType = 'image/web
     return { url: publicUrl, key };
   }
 
-  // Development Fallback
-  const fallbackUrl = `https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&auto=format&fit=crop&q=60`;
-  logger.info(`📸 [DEV S3 MOCK] Stored dummy asset key: ${key}`);
+  // Development Fallback: Store as base64 data URI locally
+  const fallbackUrl = `data:${contentType};base64,${buffer.toString('base64')}`;
+  logger.info(`📸 [DEV S3 MOCK] Stored dummy asset as base64 data URI`);
   return { url: fallbackUrl, key };
 };
 
