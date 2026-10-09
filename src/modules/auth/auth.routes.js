@@ -14,4 +14,10 @@ router.post('/logout', authenticate, authController.logout);
 router.get('/me', authenticate, authController.getMe);
 router.patch('/profile', authenticate, authController.updateProfile);
 
+// Address Management Endpoints (Persisted in MongoDB)
+router.get('/addresses', authenticate, authController.getAddresses);
+router.post('/addresses', authenticate, authController.addAddress);
+router.patch('/addresses/:id/default', authenticate, authController.setDefaultAddress);
+router.delete('/addresses/:id', authenticate, authController.deleteAddress);
+
 module.exports = router;

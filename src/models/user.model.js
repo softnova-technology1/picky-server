@@ -9,6 +9,9 @@ const userSchema = new mongoose.Schema(
     password: { type: String }, // Hashed with bcrypt for admin / password auth
     role: { type: String, enum: ['customer', 'admin'], default: 'customer' },
     defaultAddress: {
+      fullName: String,
+      phone: String,
+      email: String,
       street: String,
       city: String,
       state: String,
@@ -17,6 +20,9 @@ const userSchema = new mongoose.Schema(
     },
     addresses: [
       {
+        fullName: String,
+        phone: String,
+        email: String,
         street: String,
         city: String,
         state: String,

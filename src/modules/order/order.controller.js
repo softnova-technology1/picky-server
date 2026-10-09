@@ -18,6 +18,14 @@ const verifyRazorpayOrder = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+// Customer Direct / Simulated / Card / UPI Order Placement
+const createOrder = async (req, res, next) => {
+  try {
+    const order = await OrderService.createOrder(req.user, req.body);
+    return res.status(201).json(ApiResponse.success(order, 'Order placed successfully'));
+  } catch (err) { next(err); }
+};
+
 // audit fix #2 — Razorpay Webhook handler
 const handleRazorpayWebhook = async (req, res, next) => {
   try {
@@ -81,6 +89,7 @@ const updateStatus = async (req, res, next) => {
 module.exports = {
   createRazorpayOrder,
   verifyRazorpayOrder,
+  createOrder,
   handleRazorpayWebhook,
   myOrders,
   orderDetail,
