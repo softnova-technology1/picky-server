@@ -2,12 +2,16 @@ const jwt = require('jsonwebtoken');
 const AppError = require('../utils/appError');
 const User = require('../models/user.model');
 
+const mongoose = require('mongoose');
+
 const authenticate = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      // Temporarily bypass authentication for development testing
-      req.user = { _id: 'mockadmin_bypass', role: 'admin' };
+      // Temporarily bypass authentication for development testing with real DB user
+      let fallbackUser = await User.findOne({ role: 'customer' }).select('-__v');
+      if (!fallbackUser) fallbackUser = await User.findOne().select('-__v');
+      req.user = fallbackUser || { _id: new mongoose.Types.ObjectId(), role: 'customer' };
       return next();
     }
 

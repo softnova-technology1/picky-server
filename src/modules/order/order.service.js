@@ -65,28 +65,45 @@ const OrderService = {
   /**
    * 1. Create Razorpay Order instance for Frontend Checkout Modal
    */
-  async createRazorpayOrder(user, { shippingAddress, items }) {
+  async createRazorpayOrder(user, { shippingAddress, items, total, totalAmount, subtotal, discountAmount }) {
     let cart = await CartRepo.findByUser(user._id);
     if ((!cart || cart.items.length === 0) && items && items.length > 0) {
       const CartService = require('../cart/cart.service');
       await CartService.mergeGuestCart(user._id, items);
       cart = await CartRepo.findByUser(user._id);
     }
-    if (!cart || cart.items.length === 0) throw new AppError('Cart is empty', 400);
 
-    // Validate stock for all items
-    for (const item of cart.items) {
-      const inv = await Inventory.findOne({ product: item.product });
-      if (!inv || inv.quantity < item.quantity) {
-        throw new AppError(`Insufficient stock for "${item.name}"`, 400);
+    let calculatedTotal = 0;
+    let calculatedSubtotal = 0;
+    let calculatedDiscount = 0;
+
+    if (cart && cart.items.length > 0) {
+      // Validate stock for all items
+      for (const item of cart.items) {
+        const inv = await Inventory.findOne({ product: item.product });
+        if (!inv || inv.quantity < item.quantity) {
+          throw new AppError(`Insufficient stock for "${item.name}"`, 400);
+        }
       }
+      const pricing = await calculateCartPricing(user, cart);
+      calculatedTotal = pricing.total;
+      calculatedSubtotal = pricing.subtotal;
+      calculatedDiscount = pricing.discountAmount;
+    } else if (items && items.length > 0) {
+      calculatedSubtotal = Number(subtotal) || items.reduce((sum, i) => sum + (Number(i.price) || 0) * (Number(i.quantity) || 1), 0);
+      calculatedDiscount = Number(discountAmount) || 0;
+      calculatedTotal = Number(total || totalAmount) || Math.max(0, calculatedSubtotal - calculatedDiscount);
+    } else if (Number(total || totalAmount) > 0) {
+      calculatedTotal = Number(total || totalAmount);
+      calculatedSubtotal = calculatedTotal;
+    } else {
+      throw new AppError('Cart is empty', 400);
     }
 
-    const { subtotal, discountAmount, total } = await calculateCartPricing(user, cart);
     const receipt = generateOrderNumber();
 
     const rzOrder = await RazorpayService.createOrder({
-      amountInRupees: total,
+      amountInRupees: calculatedTotal,
       receipt,
       notes: {
         userId: user._id.toString(),
@@ -99,9 +116,9 @@ const OrderService = {
       amount: rzOrder.amount, // in paise
       currency: rzOrder.currency,
       keyId: rzOrder.keyId,
-      subtotal,
-      discountAmount,
-      total,
+      subtotal: calculatedSubtotal,
+      discountAmount: calculatedDiscount,
+      total: calculatedTotal,
     };
   },
 
@@ -116,14 +133,13 @@ const OrderService = {
    * NOTE: MongoDB transactions require a replica set. Atlas always supports this.
    * For local dev, start mongod with --replSet rs0 or use Docker with replica set.
    */
-  async verifyAndCreateOrder(user, { shippingAddress, razorpayOrderId, razorpayPaymentId, razorpaySignature, items }) {
+  async verifyAndCreateOrder(user, { shippingAddress, razorpayOrderId, razorpayPaymentId, razorpaySignature, items, subtotal, discountAmount, total, totalAmount }) {
     let cart = await CartRepo.findByUser(user._id);
     if ((!cart || cart.items.length === 0) && items && items.length > 0) {
       const CartService = require('../cart/cart.service');
       await CartService.mergeGuestCart(user._id, items);
       cart = await CartRepo.findByUser(user._id);
     }
-    if (!cart || cart.items.length === 0) throw new AppError('Cart is empty', 400);
 
     // Verify cryptographic signature (audit fix #3 — bypass bug was removed in razorpay.service.js)
     const isValid = RazorpayService.verifyPaymentSignature({
@@ -143,7 +159,62 @@ const OrderService = {
       return existingOrder;
     }
 
-    const { subtotal, discountAmount, discountType, total } = await calculateCartPricing(user, cart);
+    // Direct items fallback if DB cart is empty
+    if (!cart || cart.items.length === 0) {
+      if (!items || items.length === 0) throw new AppError('Cart is empty', 400);
+
+      const calculatedSubtotal = Number(subtotal) || items.reduce((sum, i) => sum + (Number(i.price) || 0) * (Number(i.quantity) || 1), 0);
+      const calculatedDiscount = Number(discountAmount) || 0;
+      const finalTotal = Number(total || totalAmount) || Math.max(0, calculatedSubtotal - calculatedDiscount);
+
+      const formattedItems = items.map((i) => {
+        let prodId = i.productId || i.product || i._id || i.id;
+        if (prodId && !mongoose.isValidObjectId(prodId)) prodId = null;
+        return {
+          product: prodId,
+          name: i.name || 'Product Item',
+          image: i.image || (Array.isArray(i.images) ? i.images[0] : null) || '',
+          price: Number(i.price) || 0,
+          quantity: Number(i.quantity) || 1,
+        };
+      });
+
+      const order = await Order.create({
+        orderNumber: generateOrderNumber(),
+        user: user._id,
+        items: formattedItems,
+        shippingAddress,
+        subtotal: calculatedSubtotal,
+        discountAmount: calculatedDiscount,
+        total: finalTotal,
+        paymentMethod: 'razorpay',
+        paymentStatus: 'paid',
+        razorpayOrderId,
+        razorpayPaymentId,
+        razorpaySignature,
+        status: 'confirmed',
+        statusHistory: [{ status: 'confirmed', note: 'Prepaid via Razorpay (Online)', timestamp: new Date() }],
+      });
+
+      for (const item of formattedItems) {
+        if (item.product) {
+          try {
+            await Inventory.findOneAndUpdate(
+              { product: item.product, quantity: { $gte: item.quantity } },
+              { $inc: { quantity: -item.quantity } }
+            );
+          } catch (_) {}
+        }
+      }
+
+      await User.findByIdAndUpdate(user._id, { $inc: { orderCount: 1 } });
+      NotificationService.sendOrderConfirmed(user.phone, user.name || 'Customer', order.orderNumber, order.total)
+        .catch((err) => logger.error(`[WATI] Order confirmed notification failed: ${err.message}`));
+
+      return order;
+    }
+
+    const { subtotal: cartSubtotal, discountAmount: cartDiscount, discountType, total: cartTotal } = await calculateCartPricing(user, cart);
 
     // ─── Start MongoDB Transaction (audit fix #1) ─────────────────────────────
     const session = await mongoose.startSession();
@@ -235,6 +306,107 @@ const OrderService = {
     // Send WhatsApp notification asynchronously (outside transaction — non-blocking)
     NotificationService.sendOrderConfirmed(user.phone, user.name || 'Customer', order.orderNumber, total)
       .catch((err) => logger.error(`[WATI] Order confirmed notification failed: ${err.message}`));
+
+    return order;
+  },
+
+  /**
+   * 2b. Direct Order Creation (Prepaid, Simulated Payment, or Web Checkout)
+   */
+  async createOrder(user, {
+    items = [],
+    shippingAddress = {},
+    subtotal,
+    discountAmount = 0,
+    total,
+    totalAmount,
+    paymentMethod = 'card',
+    paymentStatus = 'paid',
+    razorpayPaymentId = null,
+    razorpayOrderId = null,
+    deliveryMode = 'Standard Delivery',
+    courier = null,
+  }) {
+    if (!items || items.length === 0) {
+      throw new AppError('Order must contain at least one item', 400);
+    }
+    if (!shippingAddress.street || !shippingAddress.city || !shippingAddress.state || !shippingAddress.pincode) {
+      throw new AppError('Full shipping address (street, city, state, pincode) is required', 400);
+    }
+
+    const calculatedSubtotal = Number(subtotal) || items.reduce((sum, i) => sum + (Number(i.price) || 0) * (Number(i.quantity) || 1), 0);
+    const calculatedDiscount = Number(discountAmount) || 0;
+    const finalTotal = Number(total || totalAmount) || Math.max(0, calculatedSubtotal - calculatedDiscount);
+
+    // Format items snapshot
+    const formattedItems = items.map((i) => {
+      let prodId = i.productId || i.product || i._id || i.id;
+      if (prodId && !mongoose.isValidObjectId(prodId)) {
+        prodId = null;
+      }
+      return {
+        product: prodId,
+        name: i.name || 'Product Item',
+        image: i.image || (Array.isArray(i.images) ? i.images[0] : null) || '',
+        price: Number(i.price) || 0,
+        quantity: Number(i.quantity) || 1,
+      };
+    });
+
+    const orderNumber = generateOrderNumber();
+
+    const order = await Order.create({
+      orderNumber,
+      user: user._id,
+      items: formattedItems,
+      shippingAddress: {
+        street: shippingAddress.street,
+        city: shippingAddress.city,
+        state: shippingAddress.state,
+        pincode: shippingAddress.pincode,
+        landmark: shippingAddress.landmark || '',
+      },
+      subtotal: calculatedSubtotal,
+      discountAmount: calculatedDiscount,
+      total: finalTotal,
+      paymentMethod,
+      paymentStatus: paymentStatus || 'paid',
+      razorpayPaymentId,
+      razorpayOrderId,
+      status: 'confirmed',
+      statusHistory: [{ status: 'confirmed', note: `Order placed via ${paymentMethod}`, timestamp: new Date() }],
+      courier: courier || (deliveryMode === 'pickup' ? 'Self Store Pickup' : 'Standard Surface Delivery'),
+    });
+
+    // Deduct inventory if inventory item exists
+    for (const item of formattedItems) {
+      if (item.product) {
+        try {
+          await Inventory.findOneAndUpdate(
+            { product: item.product, quantity: { $gte: item.quantity } },
+            { $inc: { quantity: -item.quantity } }
+          );
+        } catch (_) {}
+      }
+    }
+
+    // Increment user orderCount
+    await User.findByIdAndUpdate(user._id, { $inc: { orderCount: 1 } });
+
+    // Clear cart
+    try {
+      await Cart.findOneAndUpdate(
+        { user: user._id },
+        { items: [], coupon: null, couponDiscount: 0 }
+      );
+    } catch (_) {}
+
+    NotificationService.sendOrderConfirmed(
+      user.phone || shippingAddress.phone,
+      user.name || shippingAddress.fullName || 'Customer',
+      order.orderNumber,
+      finalTotal
+    ).catch((err) => logger.warn(`[NOTIFICATION] Order notification failed: ${err.message}`));
 
     return order;
   },

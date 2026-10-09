@@ -16,9 +16,10 @@ router.post(
   orderController.handleRazorpayWebhook
 );
 
-// ─── Customer Razorpay Flow (100% Prepaid Online Payment) ───────────────────
+// ─── Customer Order Creation & List ──────────────────────────────────────
 router.post('/razorpay/create-order', authenticate, orderController.createRazorpayOrder);
 router.post('/razorpay/verify', authenticate, orderController.verifyRazorpayOrder);
+router.post('/', authenticate, orderController.createOrder);
 
 router.get('/', authenticate, orderController.myOrders);
 router.get('/:id', authenticate, orderController.orderDetail);

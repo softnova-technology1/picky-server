@@ -52,4 +52,48 @@ const updateProfile = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { sendOTP, verifyOTP, adminLogin, refreshToken, logout, getMe, updateProfile };
+const getAddresses = async (req, res, next) => {
+  try {
+    const userId = req.user?._id || req.user?.id;
+    const addresses = await AuthService.getAddresses(userId);
+    return res.json(ApiResponse.success(addresses, 'Addresses retrieved successfully'));
+  } catch (err) { next(err); }
+};
+
+const addAddress = async (req, res, next) => {
+  try {
+    const userId = req.user?._id || req.user?.id;
+    const result = await AuthService.addAddress(userId, req.body);
+    return res.json(ApiResponse.success(result, 'Address saved successfully'));
+  } catch (err) { next(err); }
+};
+
+const setDefaultAddress = async (req, res, next) => {
+  try {
+    const userId = req.user?._id || req.user?.id;
+    const result = await AuthService.setDefaultAddress(userId, req.params.id);
+    return res.json(ApiResponse.success(result, 'Default address updated'));
+  } catch (err) { next(err); }
+};
+
+const deleteAddress = async (req, res, next) => {
+  try {
+    const userId = req.user?._id || req.user?.id;
+    const result = await AuthService.deleteAddress(userId, req.params.id);
+    return res.json(ApiResponse.success(result, 'Address removed successfully'));
+  } catch (err) { next(err); }
+};
+
+module.exports = {
+  sendOTP,
+  verifyOTP,
+  adminLogin,
+  refreshToken,
+  logout,
+  getMe,
+  updateProfile,
+  getAddresses,
+  addAddress,
+  setDefaultAddress,
+  deleteAddress,
+};

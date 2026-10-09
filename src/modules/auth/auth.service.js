@@ -62,7 +62,18 @@ const AuthService = {
       'EX',
       15 * 24 * 60 * 60
     );
-    return { ...tokens, user: { id: user._id, phone: user.phone, name: user.name, role: user.role } };
+    return {
+      ...tokens,
+      user: {
+        id: user._id,
+        phone: user.phone,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        defaultAddress: user.defaultAddress,
+        addresses: user.addresses || [],
+      },
+    };
   },
 
   // Admin Direct Email & Encrypted Password Authentication
@@ -144,15 +155,119 @@ const AuthService = {
     await redis.del(`refresh:${userId.toString()}`); // ensure string key for Redis
   },
 
-  async updateProfile(userId, { name, email, defaultAddress }) {
+  async updateProfile(userId, { name, email, defaultAddress, addresses }) {
     const update = {};
     if (name !== undefined) update.name = name.trim();
     if (email !== undefined) update.email = email.toLowerCase().trim();
     if (defaultAddress !== undefined) update.defaultAddress = defaultAddress;
+    if (addresses !== undefined) update.addresses = addresses;
 
     const user = await User.findByIdAndUpdate(userId, update, { new: true }).select('-password -__v').lean();
     if (!user) throw new AppError('User not found', 404);
     return user;
+  },
+
+  async getAddresses(userId) {
+    const user = await User.findById(userId).select('addresses defaultAddress').lean();
+    if (!user) throw new AppError('User not found', 404);
+    return user.addresses || [];
+  },
+
+  async addAddress(userId, addressData) {
+    const user = await User.findById(userId);
+    if (!user) throw new AppError('User not found', 404);
+
+    const hasAddresses = Array.isArray(user.addresses) && user.addresses.length > 0;
+    const shouldBeDefault = Boolean(addressData.isDefault || !hasAddresses);
+
+    const newAddress = {
+      fullName: (addressData.fullName || user.name || '').trim(),
+      phone: (addressData.phone || user.phone || '').trim(),
+      email: (addressData.email || user.email || '').trim(),
+      street: (addressData.street || '').trim(),
+      city: (addressData.city || '').trim(),
+      state: (addressData.state || '').trim(),
+      pincode: (addressData.pincode || '').trim(),
+      landmark: (addressData.landmark || '').trim(),
+      isDefault: shouldBeDefault,
+    };
+
+    if (shouldBeDefault && Array.isArray(user.addresses)) {
+      user.addresses.forEach((addr) => {
+        addr.isDefault = false;
+      });
+      user.defaultAddress = { ...newAddress };
+    }
+
+    if (!user.addresses) user.addresses = [];
+    user.addresses.push(newAddress);
+
+    if (!user.defaultAddress || !user.defaultAddress.street) {
+      user.defaultAddress = { ...newAddress };
+    }
+
+    await user.save();
+
+    return {
+      addresses: user.addresses,
+      defaultAddress: user.defaultAddress,
+      addedAddress: user.addresses[user.addresses.length - 1],
+    };
+  },
+
+  async setDefaultAddress(userId, addressId) {
+    const user = await User.findById(userId);
+    if (!user) throw new AppError('User not found', 404);
+
+    let found = null;
+    (user.addresses || []).forEach((addr) => {
+      if (addr._id.toString() === addressId.toString()) {
+        addr.isDefault = true;
+        found = addr;
+      } else {
+        addr.isDefault = false;
+      }
+    });
+
+    if (!found) throw new AppError('Address not found', 404);
+    user.defaultAddress = {
+      fullName: found.fullName,
+      phone: found.phone,
+      email: found.email,
+      street: found.street,
+      city: found.city,
+      state: found.state,
+      pincode: found.pincode,
+      landmark: found.landmark,
+    };
+
+    await user.save();
+    return { addresses: user.addresses, defaultAddress: user.defaultAddress };
+  },
+
+  async deleteAddress(userId, addressId) {
+    const user = await User.findById(userId);
+    if (!user) throw new AppError('User not found', 404);
+
+    const prevLength = user.addresses?.length || 0;
+    user.addresses = (user.addresses || []).filter(
+      (addr) => addr._id.toString() !== addressId.toString()
+    );
+
+    if (user.addresses.length === prevLength) {
+      throw new AppError('Address not found', 404);
+    }
+
+    const hasDefault = user.addresses.some((a) => a.isDefault);
+    if (!hasDefault && user.addresses.length > 0) {
+      user.addresses[0].isDefault = true;
+      user.defaultAddress = { ...user.addresses[0].toObject() };
+    } else if (user.addresses.length === 0) {
+      user.defaultAddress = null;
+    }
+
+    await user.save();
+    return { addresses: user.addresses, defaultAddress: user.defaultAddress };
   },
 };
 

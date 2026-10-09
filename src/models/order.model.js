@@ -45,8 +45,12 @@ const orderSchema = new mongoose.Schema(
     discountAmount: { type: Number, default: 0 },
     total: { type: Number, required: true },
 
-    // Payment (100% Prepaid Razorpay)
-    paymentMethod: { type: String, enum: ['razorpay'], default: 'razorpay' },
+    // Payment (Online / Razorpay / Card / UPI / NetBanking / Simulated)
+    paymentMethod: {
+      type: String,
+      enum: ['razorpay', 'card', 'upi', 'netbanking', 'cod', 'prepaid', 'mock', 'simulated', 'Standard Delivery', 'Self Pickup'],
+      default: 'razorpay',
+    },
     paymentStatus: {
       type: String,
       enum: ['paid', 'pending', 'failed', 'refunded'],
