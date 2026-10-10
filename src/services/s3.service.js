@@ -2,12 +2,17 @@ const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/cl
 const logger = require('../utils/logger');
 const crypto = require('crypto');
 
+const keyId = (process.env.AWS_ACCESS_KEY_ID || '').toLowerCase();
+const secretKey = (process.env.AWS_SECRET_ACCESS_KEY || '').toLowerCase();
+
 const isRealAWS =
-  process.env.AWS_ACCESS_KEY_ID &&
-  process.env.AWS_SECRET_ACCESS_KEY &&
-  process.env.AWS_S3_BUCKET_NAME &&
-  !process.env.AWS_ACCESS_KEY_ID.includes('mock') &&
-  !process.env.AWS_ACCESS_KEY_ID.includes('AKIA_DEV');
+  Boolean(process.env.AWS_ACCESS_KEY_ID) &&
+  Boolean(process.env.AWS_SECRET_ACCESS_KEY) &&
+  Boolean(process.env.AWS_S3_BUCKET_NAME) &&
+  !keyId.includes('mock') &&
+  !keyId.includes('dev') &&
+  !secretKey.includes('mock') &&
+  !secretKey.includes('dev');
 
 let s3Client = null;
 if (isRealAWS) {
@@ -38,25 +43,29 @@ const uploadImage = async (buffer, folder = 'products', contentType = 'image/web
   const key = `picky/${folder}/${timestamp}-${fileHash}.webp`;
 
   if (s3Client && isRealAWS) {
-    const bucket = process.env.AWS_S3_BUCKET_NAME;
-    const region = process.env.AWS_REGION || 'ap-south-1';
+    try {
+      const bucket = process.env.AWS_S3_BUCKET_NAME;
+      const region = process.env.AWS_REGION || 'ap-south-1';
 
-    const command = new PutObjectCommand({
-      Bucket: bucket,
-      Key: key,
-      Body: buffer,
-      ContentType: contentType,
-    });
+      const command = new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType,
+      });
 
-    await s3Client.send(command);
+      await s3Client.send(command);
 
-    // If CloudFront CDN domain configured, use CDN URL, else standard S3 URL
-    const publicUrl = process.env.AWS_CLOUDFRONT_URL
-      ? `${process.env.AWS_CLOUDFRONT_URL.replace(/\/$/, '')}/${key}`
-      : `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
+      // If CloudFront CDN domain configured, use CDN URL, else standard S3 URL
+      const publicUrl = process.env.AWS_CLOUDFRONT_URL
+        ? `${process.env.AWS_CLOUDFRONT_URL.replace(/\/$/, '')}/${key}`
+        : `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
 
-    logger.info(`✅ Uploaded image to S3: ${key}`);
-    return { url: publicUrl, key };
+      logger.info(`✅ Uploaded image to S3: ${key}`);
+      return { url: publicUrl, key };
+    } catch (err) {
+      logger.warn(`AWS S3 Upload failed (${err.name}: ${err.message}). Using local fallback.`);
+    }
   }
 
   // Development Fallback: Store as base64 data URI locally

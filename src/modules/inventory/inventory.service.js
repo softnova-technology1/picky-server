@@ -71,6 +71,10 @@ const InventoryService = {
       { new: true, upsert: true }
     ).populate('product');
 
+    if (quantity !== undefined) {
+      await Product.findByIdAndUpdate(productId, { stock: Math.max(0, Number(quantity)) });
+    }
+
     return inventory;
   },
 };

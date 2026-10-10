@@ -495,6 +495,14 @@ const OrderService = {
     const { skip, limit, buildPagination } = paginate(query);
     const filter = {};
     if (query.status) filter.status = query.status;
+    if (query.search || query.q) {
+      const q = (query.search || query.q).trim();
+      filter.$or = [
+        { orderNumber: { $regex: q, $options: 'i' } },
+        { 'shippingAddress.fullName': { $regex: q, $options: 'i' } },
+        { 'shippingAddress.city': { $regex: q, $options: 'i' } },
+      ];
+    }
     const [data, total] = await Promise.all([
       OrderRepo.findAll(filter, skip, limit),
       OrderRepo.count(filter),

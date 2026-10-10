@@ -17,6 +17,14 @@ const ProductService = {
     if (query.includeInactive !== 'true' && query.includeInactive !== true) {
       filter.isActive = true;
     }
+    if (query.search || query.q) {
+      const q = (query.search || query.q).trim();
+      filter.$or = [
+        { name: { $regex: q, $options: 'i' } },
+        { sku: { $regex: q, $options: 'i' } },
+        { subCategory: { $regex: q, $options: 'i' } },
+      ];
+    }
     if (query.category) {
       if (query.category.match(/^[0-9a-fA-F]{24}$/)) {
         filter.category = query.category;

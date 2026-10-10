@@ -32,6 +32,14 @@ const MOCK_CATEGORIES = [
   }
 ];
 
+const Coupon = require('../models/coupon.model');
+
+const DEFAULT_COUPONS = [
+  { code: 'WELCOME100', type: 'flat', value: 100, minOrderAmount: 999, maxDiscountAmount: 100, isActive: true },
+  { code: 'PICKY10', type: 'percentage', value: 10, minOrderAmount: 499, maxDiscountAmount: 300, isActive: true },
+  { code: 'FESTIVE20', type: 'percentage', value: 20, minOrderAmount: 1499, maxDiscountAmount: 500, isActive: true },
+];
+
 const initializeDB = async () => {
   try {
     const count = await Category.countDocuments();
@@ -39,6 +47,13 @@ const initializeDB = async () => {
       console.log('Seeding default categories...');
       await Category.insertMany(MOCK_CATEGORIES);
       console.log('Default categories seeded.');
+    }
+
+    const couponCount = await Coupon.countDocuments();
+    if (couponCount === 0) {
+      console.log('Seeding default coupons...');
+      await Coupon.insertMany(DEFAULT_COUPONS);
+      console.log('Default coupons seeded.');
     }
   } catch (err) {
     console.error('Failed to initialize DB:', err);
