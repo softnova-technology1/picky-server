@@ -25,16 +25,24 @@ const settingsRoutes = require('./modules/settings/settings.routes');
 const inventoryRoutes = require('./modules/inventory/inventory.routes');
 const customizationRoutes = require('./modules/customization/customization.routes');
 const uploadRoutes = require('./modules/upload/upload.routes');
+const contactRoutes = require('./modules/contact/contact.routes');
+const notificationRoutes = require('./modules/notification/notification.routes');
+const path = require('path');
 
 const app = express();
 
 // ─── Security Middleware ─────────────────────────────────────────────────────
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: false, // allow images/files to be accessed cross-origin by the client
+}));
 app.use(cors({
   origin: (process.env.ALLOWED_ORIGINS || 'http://localhost:3000').split(','),
   credentials: true,
 }));
 app.use(apiLimiter);
+
+// ─── Static Uploads ──────────────────────────────────────────────────────────
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // ─── Request Parsing ─────────────────────────────────────────────────────────
 app.use(express.json({ limit: '50mb' })); // Increased limit for base64 images during migration/upload
@@ -73,6 +81,8 @@ app.use(`${API}/settings`, settingsRoutes);
 app.use(`${API}/inventory`, inventoryRoutes);
 app.use(`${API}/customization`, customizationRoutes);
 app.use(`${API}/upload`, uploadRoutes);
+app.use(`${API}/contact`, contactRoutes);
+app.use(`${API}/notifications`, notificationRoutes);
 
 // ─── 404 Handler ─────────────────────────────────────────────────────────────
 app.use((req, res, next) => {
