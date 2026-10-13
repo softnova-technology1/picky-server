@@ -93,6 +93,13 @@ const updateStatus = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+const deleteOrder = async (req, res, next) => {
+  try {
+    const result = await OrderService.deleteOrder(req.params.id);
+    return res.json(ApiResponse.success(result, 'Order deleted successfully'));
+  } catch (err) { next(err); }
+};
+
 module.exports = {
   createRazorpayOrder,
   verifyRazorpayOrder,
@@ -105,5 +112,6 @@ module.exports = {
   adminOrderDetail,
   addTracking,
   updateStatus,
+  deleteOrder,
   trackOrderByNumber,
 };

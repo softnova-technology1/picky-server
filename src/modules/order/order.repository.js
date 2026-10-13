@@ -21,7 +21,7 @@ const OrderRepository = {
 
   findTracking: (id) =>
     Order.findById(id)
-      .select('orderNumber status trackingId courier statusHistory user')
+      .select('orderNumber status trackingId courier courierUrl statusHistory user')
       .lean(),
 
   findAll: (filter, skip, limit) =>
@@ -34,27 +34,29 @@ const OrderRepository = {
 
   count: (filter) => Order.countDocuments(filter),
 
-  addTracking: (id, { trackingId, courier }) =>
-    Order.findByIdAndUpdate(
-      id,
-      {
-        trackingId,
-        courier,
-        status: 'shipped',
-        $push: { statusHistory: { status: 'shipped', timestamp: new Date() } },
-      },
-      { new: true }
-    ).lean(),
+  addTracking: (id, { trackingId, courier, courierUrl }) => {
+    const update = {
+      status: 'shipped',
+      $push: { statusHistory: { status: 'shipped', timestamp: new Date() } },
+    };
+    if (trackingId !== undefined) update.trackingId = trackingId;
+    if (courier !== undefined) update.courier = courier;
+    if (courierUrl !== undefined) update.courierUrl = courierUrl;
+    return Order.findByIdAndUpdate(id, update, { new: true }).lean();
+  },
 
-  updateStatus: (id, status, note) =>
-    Order.findByIdAndUpdate(
-      id,
-      {
-        status,
-        $push: { statusHistory: { status, timestamp: new Date(), note: note || '' } },
-      },
-      { new: true }
-    ).lean(),
+  updateStatus: (id, status, note, { courier, courierUrl, trackingId } = {}) => {
+    const update = {
+      status,
+      $push: { statusHistory: { status, timestamp: new Date(), note: note || '' } },
+    };
+    if (courier !== undefined) update.courier = courier;
+    if (courierUrl !== undefined) update.courierUrl = courierUrl;
+    if (trackingId !== undefined) update.trackingId = trackingId;
+    return Order.findByIdAndUpdate(id, update, { new: true }).lean();
+  },
+
+  delete: (id) => Order.findByIdAndDelete(id),
 };
 
 module.exports = OrderRepository;
