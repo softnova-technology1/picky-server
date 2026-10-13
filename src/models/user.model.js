@@ -6,6 +6,7 @@ const userSchema = new mongoose.Schema(
     name: { type: String, trim: true },
     phone: { type: String, trim: true, sparse: true },
     email: { type: String, trim: true, lowercase: true, sparse: true },
+    dob: { type: String, trim: true },
     password: { type: String }, // Hashed with bcrypt for admin / password auth
     role: { type: String, enum: ['customer', 'admin'], default: 'customer' },
     defaultAddress: {

@@ -84,6 +84,14 @@ const deleteAddress = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+const changePassword = async (req, res, next) => {
+  try {
+    const userId = req.user?._id || req.user?.id;
+    const result = await AuthService.changePassword(userId, req.body);
+    return res.json(ApiResponse.success(result, 'Password updated successfully'));
+  } catch (err) { next(err); }
+};
+
 module.exports = {
   sendOTP,
   verifyOTP,
@@ -96,4 +104,5 @@ module.exports = {
   addAddress,
   setDefaultAddress,
   deleteAddress,
+  changePassword,
 };

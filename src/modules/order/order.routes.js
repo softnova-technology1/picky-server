@@ -21,6 +21,7 @@ router.post('/razorpay/create-order', authenticate, orderController.createRazorp
 router.post('/razorpay/verify', authenticate, orderController.verifyRazorpayOrder);
 router.post('/', authenticate, orderController.createOrder);
 
+router.get('/track/:orderNumber', orderController.trackOrderByNumber);
 router.get('/', authenticate, orderController.myOrders);
 router.get('/:id', authenticate, orderController.orderDetail);
 router.get('/:id/tracking', authenticate, orderController.getTracking);

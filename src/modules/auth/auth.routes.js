@@ -13,6 +13,7 @@ router.post('/refresh', validate(refreshTokenSchema), authController.refreshToke
 router.post('/logout', authenticate, authController.logout);
 router.get('/me', authenticate, authController.getMe);
 router.patch('/profile', authenticate, authController.updateProfile);
+router.post('/change-password', authenticate, authController.changePassword);
 
 // Address Management Endpoints (Persisted in MongoDB)
 router.get('/addresses', authenticate, authController.getAddresses);

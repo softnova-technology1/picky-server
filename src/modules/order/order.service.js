@@ -490,6 +490,27 @@ const OrderService = {
     };
   },
 
+  async trackOrderByNumber(orderNumberQuery) {
+    if (!orderNumberQuery || !orderNumberQuery.trim()) {
+      throw new AppError('Order number is required', 400);
+    }
+    const cleanNum = orderNumberQuery.trim();
+    const conditions = [
+      { orderNumber: { $regex: new RegExp(`^${cleanNum}$`, 'i') } },
+    ];
+    if (mongoose.isValidObjectId(cleanNum)) {
+      conditions.push({ _id: cleanNum });
+    }
+    const order = await Order.findOne({ $or: conditions })
+      .populate('user', 'name phone email')
+      .lean();
+
+    if (!order) {
+      throw new AppError(`No order found matching "${cleanNum}"`, 404);
+    }
+    return order;
+  },
+
   // ─── Admin Management ──────────────────────────────────────────────────────
   async adminListOrders(query) {
     const { skip, limit, buildPagination } = paginate(query);

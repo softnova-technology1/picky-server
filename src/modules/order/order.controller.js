@@ -57,6 +57,13 @@ const getTracking = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+const trackOrderByNumber = async (req, res, next) => {
+  try {
+    const order = await OrderService.trackOrderByNumber(req.params.orderNumber);
+    return res.json(ApiResponse.success(order));
+  } catch (err) { next(err); }
+};
+
 // Admin Management
 const adminListOrders = async (req, res, next) => {
   try {
@@ -98,4 +105,5 @@ module.exports = {
   adminOrderDetail,
   addTracking,
   updateStatus,
+  trackOrderByNumber,
 };
