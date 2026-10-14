@@ -10,8 +10,23 @@ const Category = require('../../models/category.model');
 const slugify = (name) =>
   name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
+const productCache = new Map();
+const CACHE_TTL_MS = 60 * 1000; // 60 seconds TTL
+
+const clearProductCache = () => {
+  productCache.clear();
+};
+
 const ProductService = {
+  clearCache: clearProductCache,
+
   async list(query) {
+    const cacheKey = JSON.stringify(query || {});
+    const cached = productCache.get(cacheKey);
+    if (cached && Date.now() - cached.time < CACHE_TTL_MS) {
+      return cached.data;
+    }
+
     const { skip, limit, buildPagination } = paginate(query);
     const filter = {};
     if (query.includeInactive !== 'true' && query.includeInactive !== true) {
@@ -46,7 +61,9 @@ const ProductService = {
       ProductRepo.find(filter, skip, limit, query.sort),
       ProductRepo.count(filter),
     ]);
-    return { data, pagination: buildPagination(total) };
+    const result = { data, pagination: buildPagination(total) };
+    productCache.set(cacheKey, { time: Date.now(), data: result });
+    return result;
   },
 
   async getBySlug(slug) {
@@ -56,12 +73,19 @@ const ProductService = {
   },
 
   async search(query) {
+    const cacheKey = 'search_' + JSON.stringify(query || {});
+    const cached = productCache.get(cacheKey);
+    if (cached && Date.now() - cached.time < CACHE_TTL_MS) {
+      return cached.data;
+    }
     const { skip, limit, buildPagination } = paginate(query);
     const [data, total] = await Promise.all([
       ProductRepo.search(query.search, skip, limit),
       ProductRepo.countSearch(query.search),
     ]);
-    return { data, pagination: buildPagination(total) };
+    const result = { data, pagination: buildPagination(total) };
+    productCache.set(cacheKey, { time: Date.now(), data: result });
+    return result;
   },
 
   async create(body, files) {
@@ -111,6 +135,7 @@ const ProductService = {
       quantity: stock,
     });
 
+    clearProductCache();
     return product;
   },
 
@@ -158,12 +183,14 @@ const ProductService = {
       );
     }
 
+    clearProductCache();
     return ProductRepo.update(id, updateData);
   },
 
   async delete(id) {
     const product = await ProductRepo.findById(id);
     if (!product) throw new AppError('Product not found', 404);
+    clearProductCache();
     return ProductRepo.delete(id);
   },
 };

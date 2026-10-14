@@ -68,10 +68,20 @@ const uploadImage = async (buffer, folder = 'products', contentType = 'image/web
     }
   }
 
-  // Development Fallback: Store as base64 data URI locally
-  const fallbackUrl = `data:${contentType};base64,${buffer.toString('base64')}`;
-  logger.info(`📸 [DEV S3 MOCK] Stored dummy asset as base64 data URI`);
-  return { url: fallbackUrl, key };
+  // Local Static Storage: Save image file to uploads folder instead of heavy base64
+  const fs = require('fs');
+  const path = require('path');
+  const targetDir = path.join(__dirname, '../../uploads', folder);
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
+  }
+  const filename = `${timestamp}-${fileHash}.webp`;
+  const filePath = path.join(targetDir, filename);
+  fs.writeFileSync(filePath, buffer);
+
+  const localStaticUrl = `http://localhost:5000/uploads/${folder}/${filename}`;
+  logger.info(`📸 [LOCAL DISK UPLOAD] Saved asset to static disk: ${localStaticUrl}`);
+  return { url: localStaticUrl, key };
 };
 
 /**

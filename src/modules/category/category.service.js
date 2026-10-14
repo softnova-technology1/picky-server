@@ -7,9 +7,26 @@ const sharp = require('sharp');
 const slugify = (name) =>
   name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
+let categoryCache = null;
+let categoryCacheTime = 0;
+const CAT_CACHE_TTL = 120 * 1000; // 2 minutes
+
+const clearCategoryCache = () => {
+  categoryCache = null;
+  categoryCacheTime = 0;
+};
+
 const CategoryService = {
+  clearCache: clearCategoryCache,
+
   async list() {
-    return CategoryRepo.findAll();
+    if (categoryCache && Date.now() - categoryCacheTime < CAT_CACHE_TTL) {
+      return categoryCache;
+    }
+    const cats = await CategoryRepo.findAll();
+    categoryCache = cats;
+    categoryCacheTime = Date.now();
+    return cats;
   },
 
   async getBySlug(slug) {
@@ -29,6 +46,7 @@ const CategoryService = {
       const result = await uploadImage(buf, 'picky/categories');
       image = result.url;
     }
+    clearCategoryCache();
     return CategoryRepo.create({ ...body, slug, image });
   },
 
@@ -43,18 +61,21 @@ const CategoryService = {
     }
     // Prevent updating the slug so frontend constants don't break
     delete body.slug;
+    clearCategoryCache();
     return CategoryRepo.update(id, { ...body, image });
   },
 
   async updateCharacteristics(id, characteristics) {
     const category = await CategoryRepo.findById(id);
     if (!category) throw new AppError('Category not found', 404);
+    clearCategoryCache();
     return CategoryRepo.update(id, { characteristics });
   },
 
   async softDelete(id) {
     const category = await CategoryRepo.findById(id);
     if (!category) throw new AppError('Category not found', 404);
+    clearCategoryCache();
     return CategoryRepo.update(id, { isActive: false });
   },
 };

@@ -134,7 +134,22 @@ const OrderService = {
    * NOTE: MongoDB transactions require a replica set. Atlas always supports this.
    * For local dev, start mongod with --replSet rs0 or use Docker with replica set.
    */
-  async verifyAndCreateOrder(user, { shippingAddress, razorpayOrderId, razorpayPaymentId, razorpaySignature, items, subtotal, discountAmount, total, totalAmount }) {
+  async verifyAndCreateOrder(user, {
+    shippingAddress,
+    razorpayOrderId,
+    razorpayPaymentId,
+    razorpaySignature,
+    items,
+    subtotal,
+    discountAmount,
+    shippingFee,
+    deliveryFee,
+    convenienceFee,
+    total,
+    totalAmount,
+    courier,
+    deliveryMode,
+  }) {
     let cart = await CartRepo.findByUser(user._id);
     if ((!cart || cart.items.length === 0) && items && items.length > 0) {
       const CartService = require('../cart/cart.service');
@@ -168,6 +183,21 @@ const OrderService = {
       const calculatedDiscount = Number(discountAmount) || 0;
       const finalTotal = Number(total || totalAmount) || Math.max(0, calculatedSubtotal - calculatedDiscount);
 
+      let calculatedShipping = Number(shippingFee !== undefined && shippingFee !== null ? shippingFee : deliveryFee);
+      let calculatedConvenience = Number(convenienceFee) || 0;
+      if ((isNaN(calculatedShipping) || calculatedShipping === 0) && finalTotal > (calculatedSubtotal - calculatedDiscount)) {
+        const diff = finalTotal - (calculatedSubtotal - calculatedDiscount);
+        if (calculatedConvenience > 0) {
+          calculatedShipping = Math.max(0, diff - calculatedConvenience);
+        } else if (diff === 42) {
+          calculatedShipping = 40;
+          calculatedConvenience = 2;
+        } else {
+          calculatedShipping = diff;
+        }
+      }
+      if (isNaN(calculatedShipping)) calculatedShipping = 0;
+
       const formattedItems = items.map((i) => {
         let prodId = i.productId || i.product || i._id || i.id;
         if (prodId && !mongoose.isValidObjectId(prodId)) prodId = null;
@@ -187,12 +217,15 @@ const OrderService = {
         shippingAddress,
         subtotal: calculatedSubtotal,
         discountAmount: calculatedDiscount,
+        shippingFee: calculatedShipping,
+        convenienceFee: calculatedConvenience,
         total: finalTotal,
         paymentMethod: 'razorpay',
         paymentStatus: 'paid',
         razorpayOrderId,
         razorpayPaymentId,
         razorpaySignature,
+        courier: courier || (deliveryMode === 'pickup' ? 'Self Store Pickup' : 'Standard Surface Delivery'),
         status: 'confirmed',
         statusHistory: [{ status: 'confirmed', note: 'Prepaid via Razorpay (Online)', timestamp: new Date() }],
       });
@@ -280,12 +313,15 @@ const OrderService = {
             shippingAddress,
             subtotal,
             discountAmount,
+            shippingFee: Number(shippingFee !== undefined && shippingFee !== null ? shippingFee : deliveryFee) || (Number(total) > (Number(subtotal) - Number(discountAmount || 0)) ? Math.max(0, Number(total) - (Number(subtotal) - Number(discountAmount || 0)) - (Number(convenienceFee) || 0)) : 0),
+            convenienceFee: Number(convenienceFee) || 0,
             total,
             paymentMethod: 'razorpay',
             paymentStatus: 'paid',
             razorpayOrderId,
             razorpayPaymentId,
             razorpaySignature,
+            courier: courier || (deliveryMode === 'pickup' ? 'Self Store Pickup' : 'Standard Surface Delivery'),
             coupon: cart.coupon || null,
             discountType,
             status: 'confirmed',
@@ -316,15 +352,39 @@ const OrderService = {
         { session }
       );
 
-      // Step 5: Clear cart (inside transaction for full rollback safety)
-      await Cart.findOneAndUpdate(
-        { user: user._id },
-        { items: [], coupon: null, couponDiscount: 0 },
-        { session }
-      );
+      // Step 5: Clear cart or remove purchased items (inside transaction for full rollback safety)
+      const orderedProductIds = (items && items.length > 0 ? items : cart.items)
+        .map((i) => (i.productId || i.product || i._id || i.id)?.toString())
+        .filter(Boolean);
+
+      if (items && items.length > 0 && cart.items.length > items.length) {
+        await Cart.findOneAndUpdate(
+          { user: user._id },
+          { $pull: { items: { product: { $in: orderedProductIds } } } },
+          { session }
+        );
+      } else {
+        await Cart.findOneAndUpdate(
+          { user: user._id },
+          { items: [], coupon: null, couponDiscount: 0 },
+          { session }
+        );
+      }
 
       await session.commitTransaction();
       logger.info(`[ORDER] ✅ Order ${order.orderNumber} committed successfully`);
+
+      // Auto-sync with Abandoned Cart Recovery
+      try {
+        const CartService = require('../cart/cart.service');
+        await CartService.markCartRecovered(cart._id, {
+          orderNumber: order.orderNumber,
+          convertedItems: order.items,
+          wonBackAmount: order.total,
+        });
+      } catch (recErr) {
+        logger.warn(`[RECOVERY_SYNC] Failed auto-sync: ${recErr.message}`);
+      }
     } catch (err) {
       await session.abortTransaction();
       logger.error(`[ORDER] ❌ Transaction aborted for razorpayOrderId ${razorpayOrderId}: ${err.message}`);
@@ -350,6 +410,8 @@ const OrderService = {
     subtotal,
     discountAmount = 0,
     shippingFee = 0,
+    deliveryFee,
+    convenienceFee = 0,
     total,
     totalAmount,
     paymentMethod = 'card',
@@ -368,8 +430,21 @@ const OrderService = {
 
     const calculatedSubtotal = Number(subtotal) || items.reduce((sum, i) => sum + (Number(i.price) || 0) * (Number(i.quantity) || 1), 0);
     const calculatedDiscount = Number(discountAmount) || 0;
-    const calculatedShipping = Number(shippingFee) || 0;
-    const finalTotal = Number(total || totalAmount) || Math.max(0, calculatedSubtotal - calculatedDiscount + calculatedShipping);
+    let calculatedShipping = Number(shippingFee !== undefined && shippingFee !== null && shippingFee !== 0 ? shippingFee : deliveryFee);
+    let calculatedConvenience = Number(convenienceFee) || 0;
+    const finalTotal = Number(total || totalAmount) || Math.max(0, calculatedSubtotal - calculatedDiscount + (calculatedShipping || 0) + calculatedConvenience);
+    if ((isNaN(calculatedShipping) || calculatedShipping === 0) && finalTotal > (calculatedSubtotal - calculatedDiscount)) {
+      const diff = finalTotal - (calculatedSubtotal - calculatedDiscount);
+      if (calculatedConvenience > 0) {
+        calculatedShipping = Math.max(0, diff - calculatedConvenience);
+      } else if (diff === 42) {
+        calculatedShipping = 40;
+        calculatedConvenience = 2;
+      } else {
+        calculatedShipping = diff;
+      }
+    }
+    if (isNaN(calculatedShipping)) calculatedShipping = 0;
 
     // Format items snapshot
     const formattedItems = items.map((i) => {
@@ -402,6 +477,7 @@ const OrderService = {
       subtotal: calculatedSubtotal,
       discountAmount: calculatedDiscount,
       shippingFee: calculatedShipping,
+      convenienceFee: calculatedConvenience,
       total: finalTotal,
       paymentMethod,
       paymentStatus: paymentStatus || 'paid',
@@ -447,12 +523,56 @@ const OrderService = {
     // Increment user orderCount
     await User.findByIdAndUpdate(user._id, { $inc: { orderCount: 1 } });
 
-    // Clear cart
+    // Clear cart or remove ordered items
     try {
-      await Cart.findOneAndUpdate(
-        { user: user._id },
-        { items: [], coupon: null, couponDiscount: 0 }
-      );
+      const existingCart = await Cart.findOne({ user: user._id });
+      if (existingCart) {
+        const orderedProductIds = formattedItems
+          .map((i) => (i.product || i._id || i.id)?.toString())
+          .filter(Boolean);
+
+        const purchasedPayload = formattedItems.map((i) => ({
+          product: i.product || i._id,
+          name: i.name,
+          price: i.price,
+          quantity: i.quantity || 1,
+          image: i.image,
+          orderNumber: order.orderNumber,
+          purchasedAt: new Date(),
+        }));
+
+        if (existingCart.items && existingCart.items.length > formattedItems.length) {
+          await Cart.findOneAndUpdate(
+            { user: user._id },
+            {
+              $pull: { items: { product: { $in: orderedProductIds } } },
+              $push: { purchasedItems: { $each: purchasedPayload } },
+            }
+          );
+        } else {
+          await Cart.findOneAndUpdate(
+            { user: user._id },
+            {
+              items: [],
+              coupon: null,
+              couponDiscount: 0,
+              $push: { purchasedItems: { $each: purchasedPayload } },
+            }
+          );
+        }
+
+        // Auto sync with Abandoned Cart Recovery (mark as recovered/partial)
+        try {
+          const CartService = require('../cart/cart.service');
+          await CartService.markCartRecovered(existingCart._id, {
+            orderNumber: order.orderNumber,
+            convertedItems: formattedItems,
+            wonBackAmount: finalTotal,
+          });
+        } catch (recErr) {
+          logger.warn(`[RECOVERY_SYNC] Failed auto-sync: ${recErr.message}`);
+        }
+      }
     } catch (_) {}
 
     NotificationService.sendOrderConfirmed(

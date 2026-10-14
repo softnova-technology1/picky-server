@@ -60,4 +60,68 @@ const removeCoupon = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { getCart, addItem, updateQty, removeItem, clearCart, mergeGuestCart, applyCoupon, removeCoupon };
+const getAbandonedCarts = async (req, res, next) => {
+  try {
+    const carts = await CartService.getAbandonedCarts();
+    return res.json(ApiResponse.success(carts));
+  } catch (err) { next(err); }
+};
+
+const recordRecoveryAlert = async (req, res, next) => {
+  try {
+    const cart = await CartService.recordRecoveryAlert(req.params.cartId, req.body);
+    return res.json(ApiResponse.success(cart, 'Recovery alert recorded'));
+  } catch (err) { next(err); }
+};
+
+const markCartRecovered = async (req, res, next) => {
+  try {
+    const cart = await CartService.markCartRecovered(req.params.cartId, req.body);
+    return res.json(ApiResponse.success(cart, 'Cart marked as recovered'));
+  } catch (err) { next(err); }
+};
+
+const markCartExpired = async (req, res, next) => {
+  try {
+    const cart = await CartService.markCartExpired(req.params.cartId);
+    return res.json(ApiResponse.success(cart, 'Cart marked as expired'));
+  } catch (err) { next(err); }
+};
+
+const revertCartConversion = async (req, res, next) => {
+  try {
+    const cart = await CartService.revertCartConversion(req.params.cartId, req.body);
+    return res.json(ApiResponse.success(cart, 'Conversion reverted'));
+  } catch (err) { next(err); }
+};
+
+const deleteTimelineEntry = async (req, res, next) => {
+  try {
+    const { index, entryId, timestamp, event } = { ...req.body, ...req.query, ...req.params };
+    const numIndex = index !== undefined && !isNaN(parseInt(index, 10)) ? parseInt(index, 10) : undefined;
+    const cart = await CartService.deleteTimelineEntry(req.params.cartId, {
+      index: numIndex,
+      entryId,
+      timestamp,
+      event,
+    });
+    return res.json(ApiResponse.success(cart, 'Timeline entry deleted'));
+  } catch (err) { next(err); }
+};
+
+module.exports = {
+  getCart,
+  addItem,
+  updateQty,
+  removeItem,
+  clearCart,
+  mergeGuestCart,
+  applyCoupon,
+  removeCoupon,
+  getAbandonedCarts,
+  recordRecoveryAlert,
+  markCartRecovered,
+  markCartExpired,
+  revertCartConversion,
+  deleteTimelineEntry,
+};
