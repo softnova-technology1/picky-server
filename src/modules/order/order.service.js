@@ -285,15 +285,39 @@ const OrderService = {
         { session }
       );
 
-      // Step 5: Clear cart (inside transaction for full rollback safety)
-      await Cart.findOneAndUpdate(
-        { user: user._id },
-        { items: [], coupon: null, couponDiscount: 0 },
-        { session }
-      );
+      // Step 5: Clear cart or remove purchased items (inside transaction for full rollback safety)
+      const orderedProductIds = (items && items.length > 0 ? items : cart.items)
+        .map((i) => (i.productId || i.product || i._id || i.id)?.toString())
+        .filter(Boolean);
+
+      if (items && items.length > 0 && cart.items.length > items.length) {
+        await Cart.findOneAndUpdate(
+          { user: user._id },
+          { $pull: { items: { product: { $in: orderedProductIds } } } },
+          { session }
+        );
+      } else {
+        await Cart.findOneAndUpdate(
+          { user: user._id },
+          { items: [], coupon: null, couponDiscount: 0 },
+          { session }
+        );
+      }
 
       await session.commitTransaction();
       logger.info(`[ORDER] ✅ Order ${order.orderNumber} committed successfully`);
+
+      // Auto-sync with Abandoned Cart Recovery
+      try {
+        const CartService = require('../cart/cart.service');
+        await CartService.markCartRecovered(cart._id, {
+          orderNumber: order.orderNumber,
+          convertedItems: order.items,
+          wonBackAmount: order.total,
+        });
+      } catch (recErr) {
+        logger.warn(`[RECOVERY_SYNC] Failed auto-sync: ${recErr.message}`);
+      }
     } catch (err) {
       await session.abortTransaction();
       logger.error(`[ORDER] ❌ Transaction aborted for razorpayOrderId ${razorpayOrderId}: ${err.message}`);
@@ -393,12 +417,56 @@ const OrderService = {
     // Increment user orderCount
     await User.findByIdAndUpdate(user._id, { $inc: { orderCount: 1 } });
 
-    // Clear cart
+    // Clear cart or remove ordered items
     try {
-      await Cart.findOneAndUpdate(
-        { user: user._id },
-        { items: [], coupon: null, couponDiscount: 0 }
-      );
+      const existingCart = await Cart.findOne({ user: user._id });
+      if (existingCart) {
+        const orderedProductIds = formattedItems
+          .map((i) => (i.product || i._id || i.id)?.toString())
+          .filter(Boolean);
+
+        const purchasedPayload = formattedItems.map((i) => ({
+          product: i.product || i._id,
+          name: i.name,
+          price: i.price,
+          quantity: i.quantity || 1,
+          image: i.image,
+          orderNumber: order.orderNumber,
+          purchasedAt: new Date(),
+        }));
+
+        if (existingCart.items && existingCart.items.length > formattedItems.length) {
+          await Cart.findOneAndUpdate(
+            { user: user._id },
+            {
+              $pull: { items: { product: { $in: orderedProductIds } } },
+              $push: { purchasedItems: { $each: purchasedPayload } },
+            }
+          );
+        } else {
+          await Cart.findOneAndUpdate(
+            { user: user._id },
+            {
+              items: [],
+              coupon: null,
+              couponDiscount: 0,
+              $push: { purchasedItems: { $each: purchasedPayload } },
+            }
+          );
+        }
+
+        // Auto sync with Abandoned Cart Recovery (mark as recovered/partial)
+        try {
+          const CartService = require('../cart/cart.service');
+          await CartService.markCartRecovered(existingCart._id, {
+            orderNumber: order.orderNumber,
+            convertedItems: formattedItems,
+            wonBackAmount: finalTotal,
+          });
+        } catch (recErr) {
+          logger.warn(`[RECOVERY_SYNC] Failed auto-sync: ${recErr.message}`);
+        }
+      }
     } catch (_) {}
 
     NotificationService.sendOrderConfirmed(
