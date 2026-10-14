@@ -155,10 +155,11 @@ const AuthService = {
     await redis.del(`refresh:${userId.toString()}`); // ensure string key for Redis
   },
 
-  async updateProfile(userId, { name, email, defaultAddress, addresses }) {
+  async updateProfile(userId, { name, email, dob, defaultAddress, addresses }) {
     const update = {};
     if (name !== undefined) update.name = name.trim();
     if (email !== undefined) update.email = email.toLowerCase().trim();
+    if (dob !== undefined) update.dob = dob.trim();
     if (defaultAddress !== undefined) update.defaultAddress = defaultAddress;
     if (addresses !== undefined) update.addresses = addresses;
 
@@ -268,6 +269,29 @@ const AuthService = {
 
     await user.save();
     return { addresses: user.addresses, defaultAddress: user.defaultAddress };
+  },
+
+  async changePassword(userId, { currentPassword, newPassword }) {
+    if (!newPassword || newPassword.length < 6) {
+      throw new AppError('New password must be at least 6 characters long', 400);
+    }
+    const user = await User.findById(userId);
+    if (!user) throw new AppError('User not found', 404);
+
+    // If user already has an established password, verify the current password
+    if (user.password) {
+      if (!currentPassword) {
+        throw new AppError('Current password is required', 400);
+      }
+      const isMatch = await user.comparePassword(currentPassword);
+      if (!isMatch) {
+        throw new AppError('Current password does not match', 400);
+      }
+    }
+
+    user.password = newPassword;
+    await user.save();
+    return { message: 'Password updated successfully' };
   },
 };
 

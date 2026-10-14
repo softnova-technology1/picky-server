@@ -342,6 +342,7 @@ const OrderService = {
     shippingAddress = {},
     subtotal,
     discountAmount = 0,
+    shippingFee = 0,
     total,
     totalAmount,
     paymentMethod = 'card',
@@ -360,7 +361,8 @@ const OrderService = {
 
     const calculatedSubtotal = Number(subtotal) || items.reduce((sum, i) => sum + (Number(i.price) || 0) * (Number(i.quantity) || 1), 0);
     const calculatedDiscount = Number(discountAmount) || 0;
-    const finalTotal = Number(total || totalAmount) || Math.max(0, calculatedSubtotal - calculatedDiscount);
+    const calculatedShipping = Number(shippingFee) || 0;
+    const finalTotal = Number(total || totalAmount) || Math.max(0, calculatedSubtotal - calculatedDiscount + calculatedShipping);
 
     // Format items snapshot
     const formattedItems = items.map((i) => {
@@ -392,6 +394,7 @@ const OrderService = {
       },
       subtotal: calculatedSubtotal,
       discountAmount: calculatedDiscount,
+      shippingFee: calculatedShipping,
       total: finalTotal,
       paymentMethod,
       paymentStatus: paymentStatus || 'paid',
@@ -558,6 +561,27 @@ const OrderService = {
     };
   },
 
+  async trackOrderByNumber(orderNumberQuery) {
+    if (!orderNumberQuery || !orderNumberQuery.trim()) {
+      throw new AppError('Order number is required', 400);
+    }
+    const cleanNum = orderNumberQuery.trim();
+    const conditions = [
+      { orderNumber: { $regex: new RegExp(`^${cleanNum}$`, 'i') } },
+    ];
+    if (mongoose.isValidObjectId(cleanNum)) {
+      conditions.push({ _id: cleanNum });
+    }
+    const order = await Order.findOne({ $or: conditions })
+      .populate('user', 'name phone email')
+      .lean();
+
+    if (!order) {
+      throw new AppError(`No order found matching "${cleanNum}"`, 404);
+    }
+    return order;
+  },
+
   // ─── Admin Management ──────────────────────────────────────────────────────
   async adminListOrders(query) {
     const { skip, limit, buildPagination } = paginate(query);
@@ -585,9 +609,9 @@ const OrderService = {
     return order;
   },
 
-  async addTracking(orderId, { trackingId, courier }) {
+  async addTracking(orderId, { trackingId, courier, courierUrl }) {
     if (!mongoose.isValidObjectId(orderId)) throw new AppError('Invalid order ID', 400);
-    const order = await OrderRepo.addTracking(orderId, { trackingId, courier });
+    const order = await OrderRepo.addTracking(orderId, { trackingId, courier, courierUrl });
     if (!order) throw new AppError('Order not found', 404);
 
     // Send WhatsApp with AWB & courier reference (async)
@@ -599,7 +623,7 @@ const OrderService = {
     return order;
   },
 
-  async updateStatus(orderId, { status, note }) {
+  async updateStatus(orderId, { status, note, courier, courierUrl, trackingId }) {
     if (!mongoose.isValidObjectId(orderId)) throw new AppError('Invalid order ID', 400);
     const existing = await OrderRepo.findById(orderId);
     if (!existing) throw new AppError('Order not found', 404);
@@ -616,7 +640,7 @@ const OrderService = {
       }
     }
 
-    const order = await OrderRepo.updateStatus(orderId, status, note);
+    const order = await OrderRepo.updateStatus(orderId, status, note, { courier, courierUrl, trackingId });
 
     // Send WhatsApp on delivered or cancelled (audit fix #4 — added cancelled)
     const user = await User.findById(order.user).lean();
@@ -630,6 +654,27 @@ const OrderService = {
       }
     }
     return order;
+  },
+
+  async deleteOrder(orderId) {
+    if (!mongoose.isValidObjectId(orderId)) throw new AppError('Invalid order ID', 400);
+    const existing = await OrderRepo.findById(orderId);
+    if (!existing) throw new AppError('Order not found', 404);
+
+    // If order was not cancelled, restore inventory quantities back
+    if (existing.status !== 'cancelled' && Array.isArray(existing.items)) {
+      for (const item of existing.items) {
+        if (item.product) {
+          await Inventory.findOneAndUpdate(
+            { product: item.product },
+            { $inc: { quantity: item.quantity || 1 } }
+          );
+        }
+      }
+    }
+
+    await OrderRepo.delete(orderId);
+    return { success: true, message: 'Order deleted successfully' };
   },
 };
 

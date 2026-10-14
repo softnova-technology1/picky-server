@@ -15,13 +15,17 @@ const checkoutSchema = z.object({
 });
 
 const addTrackingSchema = z.object({
-  trackingId: z.string().min(1, 'AWB number required'),
-  courier: z.string().min(1, 'Courier name required'),
+  trackingId: z.string().optional(),
+  courier: z.string().optional(),
+  courierUrl: z.string().optional(),
 });
 
 const updateStatusSchema = z.object({
   status: z.enum(['confirmed', 'shipped', 'delivered', 'cancelled']),
   note: z.string().optional(),
+  courier: z.string().optional(),
+  courierUrl: z.string().optional(),
+  trackingId: z.string().optional(),
 });
 
 module.exports = { checkoutSchema, addTrackingSchema, updateStatusSchema };

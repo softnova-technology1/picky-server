@@ -43,6 +43,7 @@ const orderSchema = new mongoose.Schema(
     // Pricing
     subtotal: { type: Number, required: true },
     discountAmount: { type: Number, default: 0 },
+cd     shippingFee: { type: Number, default: 0 },
     total: { type: Number, required: true },
 
     // Payment (Online / Razorpay / Card / UPI / NetBanking / Simulated)
@@ -79,6 +80,7 @@ const orderSchema = new mongoose.Schema(
     // Tracking (set when admin ships the order)
     trackingId: { type: String, default: null },  // AWB number (optional reference)
     courier: { type: String, default: null },      // courier partner name
+    courierUrl: { type: String, default: null },   // courier tracking website URL
   },
   { timestamps: true }
 );
