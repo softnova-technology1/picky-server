@@ -7,6 +7,7 @@ const Inventory = require('../../models/inventory.model');
 const CouponUsage = require('../../models/couponUsage.model');
 const Coupon = require('../../models/coupon.model');
 const User = require('../../models/user.model');
+const Product = require('../../models/product.model');
 const Order = require('../../models/order.model');
 const NotificationService = require('../../services/notification.service');
 const RazorpayService = require('../../services/razorpay.service');
@@ -199,11 +200,31 @@ const OrderService = {
       for (const item of formattedItems) {
         if (item.product) {
           try {
+            // 1. Decrement Inventory.quantity
             await Inventory.findOneAndUpdate(
-              { product: item.product, quantity: { $gte: item.quantity } },
-              { $inc: { quantity: -item.quantity } }
+              { product: item.product },
+              { $inc: { quantity: -item.quantity } },
+              { new: true }
             );
-          } catch (_) {}
+            await Inventory.updateOne(
+              { product: item.product, quantity: { $lt: 0 } },
+              { $set: { quantity: 0 } }
+            );
+
+            // 2. Decrement Product.stock (Live sync for Admin Catalog & UI)
+            await Product.findByIdAndUpdate(
+              item.product,
+              { $inc: { stock: -item.quantity } },
+              { new: true }
+            );
+            await Product.updateOne(
+              { _id: item.product, stock: { $lt: 0 } },
+              { $set: { stock: 0 } }
+            );
+            logger.info(`[ORDER] Stock decremented by ${item.quantity} for product: ${item.product}`);
+          } catch (stkErr) {
+            logger.error(`[ORDER] Stock deduction error for ${item.product}: ${stkErr.message}`);
+          }
         }
       }
 
@@ -221,7 +242,7 @@ const OrderService = {
     session.startTransaction();
     let order;
     try {
-      // Step 1: Deduct inventory atomically for every cart item
+      // Step 1: Deduct inventory and product stock atomically for every cart item
       for (const item of cart.items) {
         const updatedInv = await Inventory.findOneAndUpdate(
           { product: item.product, quantity: { $gte: item.quantity } },
@@ -231,6 +252,16 @@ const OrderService = {
         if (!updatedInv) {
           throw new AppError(`"${item.name}" is now out of stock. Your payment was not debited.`, 400);
         }
+        await Product.findByIdAndUpdate(
+          item.product,
+          { $inc: { stock: -item.quantity } },
+          { session, new: true }
+        );
+        await Product.updateOne(
+          { _id: item.product, stock: { $lt: 0 } },
+          { $set: { stock: 0 } },
+          { session }
+        );
       }
 
       // Step 2: Create the Order document
@@ -381,15 +412,35 @@ const OrderService = {
       courier: courier || (deliveryMode === 'pickup' ? 'Self Store Pickup' : 'Standard Surface Delivery'),
     });
 
-    // Deduct inventory if inventory item exists
+    // Deduct inventory & product stock atomically
     for (const item of formattedItems) {
       if (item.product) {
         try {
+          // 1. Decrement Inventory.quantity
           await Inventory.findOneAndUpdate(
-            { product: item.product, quantity: { $gte: item.quantity } },
-            { $inc: { quantity: -item.quantity } }
+            { product: item.product },
+            { $inc: { quantity: -item.quantity } },
+            { new: true }
           );
-        } catch (_) {}
+          await Inventory.updateOne(
+            { product: item.product, quantity: { $lt: 0 } },
+            { $set: { quantity: 0 } }
+          );
+
+          // 2. Decrement Product.stock (Live sync for Admin Catalog & UI)
+          await Product.findByIdAndUpdate(
+            item.product,
+            { $inc: { stock: -item.quantity } },
+            { new: true }
+          );
+          await Product.updateOne(
+            { _id: item.product, stock: { $lt: 0 } },
+            { $set: { stock: 0 } }
+          );
+          logger.info(`[ORDER] Stock decremented by ${item.quantity} for product: ${item.product}`);
+        } catch (stkErr) {
+          logger.error(`[ORDER] Stock deduction error for ${item.product}: ${stkErr.message}`);
+        }
       }
     }
 

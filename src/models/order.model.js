@@ -43,7 +43,7 @@ const orderSchema = new mongoose.Schema(
     // Pricing
     subtotal: { type: Number, required: true },
     discountAmount: { type: Number, default: 0 },
-cd     shippingFee: { type: Number, default: 0 },
+    shippingFee: { type: Number, default: 0 },
     total: { type: Number, required: true },
 
     // Payment (Online / Razorpay / Card / UPI / NetBanking / Simulated)
