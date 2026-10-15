@@ -77,6 +77,33 @@ const InventoryService = {
 
     return inventory;
   },
+
+  async deleteItem(productId) {
+    let pId = productId;
+    try {
+      const inv = await Inventory.findById(productId);
+      if (inv) {
+        pId = inv.product?._id || inv.product;
+        await Inventory.findByIdAndDelete(productId);
+      } else {
+        await Inventory.deleteMany({ product: productId });
+      }
+      if (pId) {
+        await Product.findByIdAndDelete(pId);
+        await Inventory.deleteMany({ product: pId });
+      }
+      try {
+        const ProductService = require('../product/product.service');
+        if (ProductService && ProductService.clearCache) {
+          ProductService.clearCache();
+        }
+      } catch (_) {}
+      return true;
+    } catch (err) {
+      console.error('Error deleting inventory/product item:', err);
+      throw err;
+    }
+  },
 };
 
 module.exports = InventoryService;

@@ -19,6 +19,15 @@ const InventoryController = {
       next(err);
     }
   },
+
+  async deleteItem(req, res, next) {
+    try {
+      await InventoryService.deleteItem(req.params.productId);
+      return sendSuccess(res, null, 200, null, 'Item deleted successfully');
+    } catch (err) {
+      next(err);
+    }
+  },
 };
 
 module.exports = InventoryController;

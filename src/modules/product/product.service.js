@@ -49,6 +49,9 @@ const ProductService = {
         else filter.category = '000000000000000000000000'; // Force 0 results if slug not found
       }
     }
+    if (query.subCategory) {
+      filter.subCategory = { $regex: new RegExp(`^${query.subCategory}$`, 'i') };
+    }
     
     // Price filtering
     if (query.minPrice !== undefined || query.maxPrice !== undefined) {
@@ -198,6 +201,7 @@ const ProductService = {
   async delete(id) {
     const product = await ProductRepo.findById(id);
     if (!product) throw new AppError('Product not found', 404);
+    await Inventory.deleteMany({ product: id });
     clearProductCache();
     return ProductRepo.delete(id);
   },

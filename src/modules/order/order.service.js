@@ -198,17 +198,25 @@ const OrderService = {
       }
       if (isNaN(calculatedShipping)) calculatedShipping = 0;
 
-      const formattedItems = items.map((i) => {
+      const formattedItems = await Promise.all(items.map(async (i) => {
         let prodId = i.productId || i.product || i._id || i.id;
         if (prodId && !mongoose.isValidObjectId(prodId)) prodId = null;
+        let itemImg = i.image || (Array.isArray(i.images) ? i.images[0] : null) || '';
+        if (typeof itemImg === 'string' && itemImg.startsWith('data:image/')) {
+          itemImg = '';
+        }
+        if (!itemImg && prodId) {
+          const dbProd = await Product.findById(prodId).select('images').lean();
+          itemImg = (dbProd && dbProd.images && dbProd.images[0]) || '';
+        }
         return {
           product: prodId,
           name: i.name || 'Product Item',
-          image: i.image || (Array.isArray(i.images) ? i.images[0] : null) || '',
+          image: itemImg,
           price: Number(i.price) || 0,
           quantity: Number(i.quantity) || 1,
         };
-      });
+      }));
 
       const order = await Order.create({
         orderNumber: generateOrderNumber(),
@@ -306,7 +314,7 @@ const OrderService = {
             items: cart.items.map((i) => ({
               product: i.product,
               name: i.name,
-              image: i.image,
+              image: (typeof i.image === 'string' && i.image.startsWith('data:image/')) ? '' : (i.image || ''),
               price: i.price,
               quantity: i.quantity,
             })),
@@ -447,19 +455,27 @@ const OrderService = {
     if (isNaN(calculatedShipping)) calculatedShipping = 0;
 
     // Format items snapshot
-    const formattedItems = items.map((i) => {
+    const formattedItems = await Promise.all(items.map(async (i) => {
       let prodId = i.productId || i.product || i._id || i.id;
       if (prodId && !mongoose.isValidObjectId(prodId)) {
         prodId = null;
       }
+      let itemImg = i.image || (Array.isArray(i.images) ? i.images[0] : null) || '';
+      if (typeof itemImg === 'string' && itemImg.startsWith('data:image/')) {
+        itemImg = '';
+      }
+      if (!itemImg && prodId) {
+        const dbProd = await Product.findById(prodId).select('images').lean();
+        itemImg = (dbProd && dbProd.images && dbProd.images[0]) || '';
+      }
       return {
         product: prodId,
         name: i.name || 'Product Item',
-        image: i.image || (Array.isArray(i.images) ? i.images[0] : null) || '',
+        image: itemImg,
         price: Number(i.price) || 0,
         quantity: Number(i.quantity) || 1,
       };
-    });
+    }));
 
     const orderNumber = generateOrderNumber();
 
