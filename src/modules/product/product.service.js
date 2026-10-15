@@ -121,6 +121,10 @@ const ProductService = {
       }
     }
 
+    if (!images || images.length === 0) {
+      throw new AppError('At least one product image is required. Please upload a product image.', 400);
+    }
+
     const stock = body.stock !== undefined && !isNaN(Number(body.stock)) ? Math.max(0, Number(body.stock)) : 50;
     const { stock: _stock, ...productData } = body;
 
@@ -164,6 +168,10 @@ const ProductService = {
       }
     } else {
       images = product.images || []; // Fallback
+    }
+
+    if (!images || images.length === 0) {
+      throw new AppError('A product must have at least one image.', 400);
     }
 
     const { stock, imagePositions: _ip, ...productData } = body;

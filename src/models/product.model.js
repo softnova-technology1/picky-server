@@ -10,6 +10,7 @@ const productSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     slug: { type: String, required: true, unique: true, lowercase: true, trim: true },
     description: { type: String, trim: true },
+    shortDescription: { type: String, trim: true },
     category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },
     subCategory: { type: String, trim: true },
     sku: { type: String, trim: true, uppercase: true },
@@ -18,6 +19,12 @@ const productSchema = new mongoose.Schema(
     stock: { type: Number, default: 0, min: 0 },
     discountPrice: { type: Number, min: 0 }, // null = no discount
     characteristics: [characteristicSchema],
+    variants: {
+      type: { type: String, default: 'none' },
+      options: [{ type: String, trim: true }],
+      default: { type: String, trim: true },
+      colors: [mongoose.Schema.Types.Mixed],
+    },
     tags: [{ type: String, lowercase: true, trim: true }],
     isActive: { type: Boolean, default: true },
     isFeatured: { type: Boolean, default: false },
@@ -30,6 +37,6 @@ productSchema.index({ category: 1 });
 productSchema.index({ subCategory: 1 });
 productSchema.index({ sku: 1 }, { sparse: true });
 productSchema.index({ isActive: 1 });
-productSchema.index({ name: 'text', tags: 'text', description: 'text' });
+productSchema.index({ name: 'text', tags: 'text', description: 'text', shortDescription: 'text' });
 
 module.exports = mongoose.model('Product', productSchema);
