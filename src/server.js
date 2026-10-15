@@ -32,6 +32,10 @@ const start = async () => {
     logger.info(`✅ picky-server running on http://localhost:${PORT}`);
     logger.info(`📡 API: http://localhost:${PORT}/api/v1`);
     logger.info(`🏥 Health: http://localhost:${PORT}/health`);
+
+    // 5. Initialize Automated Background Cron Jobs
+    const { initCronJobs } = require('./jobs');
+    initCronJobs();
   });
 
   // Graceful shutdown on cloud deployment (Render, AWS, Docker)
