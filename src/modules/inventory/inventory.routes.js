@@ -8,5 +8,6 @@ router.use(authenticate, requireRole('admin'));
 
 router.get('/', InventoryController.list);
 router.patch('/:productId', InventoryController.updateStock);
+router.delete('/:productId', InventoryController.deleteItem);
 
 module.exports = router;

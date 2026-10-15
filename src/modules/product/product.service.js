@@ -49,6 +49,9 @@ const ProductService = {
         else filter.category = '000000000000000000000000'; // Force 0 results if slug not found
       }
     }
+    if (query.subCategory) {
+      filter.subCategory = { $regex: new RegExp(`^${query.subCategory}$`, 'i') };
+    }
     
     // Price filtering
     if (query.minPrice !== undefined || query.maxPrice !== undefined) {
@@ -121,6 +124,10 @@ const ProductService = {
       }
     }
 
+    if (!images || images.length === 0) {
+      throw new AppError('At least one product image is required. Please upload a product image.', 400);
+    }
+
     const stock = body.stock !== undefined && !isNaN(Number(body.stock)) ? Math.max(0, Number(body.stock)) : 50;
     const { stock: _stock, ...productData } = body;
 
@@ -166,6 +173,10 @@ const ProductService = {
       images = product.images || []; // Fallback
     }
 
+    if (!images || images.length === 0) {
+      throw new AppError('A product must have at least one image.', 400);
+    }
+
     const { stock, imagePositions: _ip, ...productData } = body;
     const updateData = { ...productData, images };
     if (stock !== undefined && !isNaN(Number(stock))) {
@@ -190,6 +201,7 @@ const ProductService = {
   async delete(id) {
     const product = await ProductRepo.findById(id);
     if (!product) throw new AppError('Product not found', 404);
+    await Inventory.deleteMany({ product: id });
     clearProductCache();
     return ProductRepo.delete(id);
   },
