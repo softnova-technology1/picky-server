@@ -1,6 +1,7 @@
 const Inventory = require('../../models/inventory.model');
 const Product = require('../../models/product.model');
 const Category = require('../../models/category.model');
+const Order = require('../../models/order.model');
 const AppError = require('../../utils/appError');
 const paginate = require('../../utils/paginate');
 
@@ -26,6 +27,53 @@ const InventoryService = {
     // Filter out orphaned records if product was deleted
     inventoryItems = inventoryItems.filter((item) => item.product);
 
+    // Aggregate sold and reserved units from orders
+    let orderStatsMap = {};
+    try {
+      const orderAgg = await Order.aggregate([
+        { $match: { status: { $ne: 'cancelled' } } },
+        { $unwind: '$items' },
+        {
+          $group: {
+            _id: '$items.product',
+            totalSold: {
+              $sum: {
+                $cond: [{ $in: ['$status', ['delivered', 'shipped', 'out_for_delivery']] }, '$items.quantity', 0],
+              },
+            },
+            totalReserved: {
+              $sum: {
+                $cond: [{ $in: ['$status', ['confirmed', 'processing']] }, '$items.quantity', 0],
+              },
+            },
+          },
+        },
+      ]);
+      orderAgg.forEach((stat) => {
+        if (stat._id) {
+          orderStatsMap[String(stat._id)] = {
+            sold: stat.totalSold || 0,
+            reserved: stat.totalReserved || 0,
+          };
+        }
+      });
+    } catch (e) {
+      console.warn('Order aggregation notice:', e.message);
+    }
+
+    // Attach sold, reserved, and normalize
+    inventoryItems = inventoryItems.map((item) => {
+      const pId = String(item.product?._id || item.product);
+      const stats = orderStatsMap[pId] || {};
+      const sold = item.sold !== undefined && item.sold > 0 ? item.sold : (stats.sold || 0);
+      const reserved = item.reserved !== undefined && item.reserved > 0 ? item.reserved : (stats.reserved || 0);
+      return {
+        ...item,
+        sold,
+        reserved,
+      };
+    });
+
     // Apply text search on product name or SKU in memory if search query provided
     if (query.search) {
       const q = query.search.trim().toLowerCase();
@@ -42,28 +90,38 @@ const InventoryService = {
 
     // Calculate Summary KPIs
     const totalUnits = inventoryItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
+    const inStockCount = inventoryItems.filter((item) => item.quantity > item.lowStockThreshold).length;
     const lowStockCount = inventoryItems.filter((item) => item.quantity <= item.lowStockThreshold && item.quantity > 0).length;
     const outOfStockCount = inventoryItems.filter((item) => item.quantity === 0).length;
+    const deactivatedCount = inventoryItems.filter((item) => item.product?.isActive === false).length;
+    const totalSoldUnits = inventoryItems.reduce((sum, item) => sum + (item.sold || 0), 0);
+    const totalReservedUnits = inventoryItems.reduce((sum, item) => sum + (item.reserved || 0), 0);
 
     return {
       data: paginatedData,
       kpis: {
         totalProducts: total,
         totalUnits,
+        inStockCount,
         lowStockCount,
         outOfStockCount,
+        deactivatedCount,
+        totalSoldUnits,
+        totalReservedUnits,
       },
       pagination: buildPagination(total),
     };
   },
 
-  async updateStock(productId, { quantity, lowStockThreshold, reason }) {
+  async updateStock(productId, { quantity, lowStockThreshold, reserved, sold, reason }) {
     const product = await Product.findById(productId);
     if (!product) throw new AppError('Product not found', 404);
 
     const updateFields = {};
     if (quantity !== undefined) updateFields.quantity = Math.max(0, Number(quantity));
     if (lowStockThreshold !== undefined) updateFields.lowStockThreshold = Math.max(0, Number(lowStockThreshold));
+    if (reserved !== undefined) updateFields.reserved = Math.max(0, Number(reserved));
+    if (sold !== undefined) updateFields.sold = Math.max(0, Number(sold));
 
     const inventory = await Inventory.findOneAndUpdate(
       { product: productId },
@@ -76,6 +134,28 @@ const InventoryService = {
     }
 
     return inventory;
+  },
+
+  async toggleProductStatus(productId) {
+    let pId = productId;
+    const inv = await Inventory.findById(productId);
+    if (inv) {
+      pId = inv.product?._id || inv.product;
+    }
+    const product = await Product.findById(pId);
+    if (!product) throw new AppError('Product not found', 404);
+
+    const newStatus = !product.isActive;
+    const updated = await Product.findByIdAndUpdate(pId, { isActive: newStatus }, { new: true });
+
+    try {
+      const ProductService = require('../product/product.service');
+      if (ProductService && ProductService.clearCache) {
+        ProductService.clearCache();
+      }
+    } catch (_) {}
+
+    return { product: updated, isActive: updated.isActive };
   },
 
   async deleteItem(productId) {

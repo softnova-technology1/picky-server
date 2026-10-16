@@ -77,6 +77,10 @@ const createProductSchema = z.preprocess(
       (val) => (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val)),
       z.boolean().optional()
     ),
+    isActive: z.preprocess(
+      (val) => (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val)),
+      z.boolean().optional()
+    ),
   })
 );
 
@@ -141,6 +145,10 @@ const updateProductSchema = z.preprocess(
       return Array.isArray(val) ? val : [val];
     }, z.array(z.string()).optional()),
     isFeatured: z.preprocess(
+      (val) => (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val)),
+      z.boolean().optional()
+    ),
+    isActive: z.preprocess(
       (val) => (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val)),
       z.boolean().optional()
     ),

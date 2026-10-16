@@ -20,6 +20,15 @@ const InventoryController = {
     }
   },
 
+  async toggleProductStatus(req, res, next) {
+    try {
+      const result = await InventoryService.toggleProductStatus(req.params.productId);
+      return sendSuccess(res, result, 200, null, `Product ${result.isActive ? 'activated' : 'deactivated'} successfully`);
+    } catch (err) {
+      next(err);
+    }
+  },
+
   async deleteItem(req, res, next) {
     try {
       await InventoryService.deleteItem(req.params.productId);

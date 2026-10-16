@@ -44,4 +44,11 @@ const remove = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { list, detail, search, create, update, remove };
+const toggleStatus = async (req, res, next) => {
+  try {
+    const product = await ProductService.toggleStatus(req.params.id);
+    return res.json(ApiResponse.success(product, `Product ${product.isActive ? 'activated' : 'deactivated'}`));
+  } catch (err) { next(err); }
+};
+
+module.exports = { list, detail, search, create, update, remove, toggleStatus };
