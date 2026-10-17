@@ -1,8 +1,9 @@
 const SubCategory = require('../../models/subcategory.model');
 const { ApiResponse } = require('../../utils/apiResponse');
+const { uploadImage, deleteImage } = require('../../services/s3.service');
 const sharp = require('sharp');
 
-const optimizeBase64 = async (imageStr) => {
+const processSubcategoryImage = async (imageStr) => {
   if (!imageStr || typeof imageStr !== 'string' || !imageStr.startsWith('data:image')) {
     return imageStr;
   }
@@ -12,9 +13,10 @@ const optimizeBase64 = async (imageStr) => {
     const buf = Buffer.from(match[2], 'base64');
     const resized = await sharp(buf)
       .resize(320, 320, { fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: 75 })
+      .webp({ quality: 80 })
       .toBuffer();
-    return `data:image/webp;base64,${resized.toString('base64')}`;
+    const result = await uploadImage(resized, 'subcategories');
+    return result.url;
   } catch (_) {
     return imageStr;
   }
@@ -51,7 +53,7 @@ const create = async (req, res, next) => {
   try {
     clearSubCache();
     const body = { ...req.body };
-    if (body.image) body.image = await optimizeBase64(body.image);
+    if (body.image) body.image = await processSubcategoryImage(body.image);
     const subcategory = await SubCategory.create(body);
     const populated = await SubCategory.findById(subcategory._id).populate('categoryId', 'name slug').lean();
     return res.status(201).json(ApiResponse.success(populated, 'Subcategory created'));
@@ -61,12 +63,20 @@ const create = async (req, res, next) => {
 const update = async (req, res, next) => {
   try {
     clearSubCache();
+    const existing = await SubCategory.findById(req.params.id);
+    if (!existing) return res.status(404).json(ApiResponse.error('Not found', 404));
+
     const body = { ...req.body };
-    if (body.image) body.image = await optimizeBase64(body.image);
+    if (body.image) {
+      body.image = await processSubcategoryImage(body.image);
+      if (existing.image && existing.image !== body.image) {
+        deleteImage(existing.image).catch(() => {});
+      }
+    }
+
     const subcategory = await SubCategory.findByIdAndUpdate(req.params.id, body, { new: true })
       .populate('categoryId', 'name slug')
       .lean();
-    if (!subcategory) return res.status(404).json(ApiResponse.error('Not found', 404));
     return res.json(ApiResponse.success(subcategory, 'Subcategory updated'));
   } catch (err) { next(err); }
 };
@@ -76,6 +86,11 @@ const remove = async (req, res, next) => {
     clearSubCache();
     const subcategory = await SubCategory.findByIdAndDelete(req.params.id);
     if (!subcategory) return res.status(404).json(ApiResponse.error('Not found', 404));
+
+    if (subcategory.image) {
+      deleteImage(subcategory.image).catch(() => {});
+    }
+
     return res.json(ApiResponse.success(null, 'Subcategory deleted'));
   } catch (err) { next(err); }
 };

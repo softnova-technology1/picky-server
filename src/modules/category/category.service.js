@@ -1,7 +1,7 @@
 // TODO (Dev 3): Implement category business logic
 const AppError = require('../../utils/appError');
 const CategoryRepo = require('./category.repository');
-const { uploadImage } = require('../../services/s3.service');
+const { uploadImage, deleteImage } = require('../../services/s3.service');
 const sharp = require('sharp');
 
 const slugify = (name) =>
@@ -59,7 +59,10 @@ const CategoryService = {
     let image = category.image;
     if (file) {
       const buf = await sharp(file.buffer).resize(400, 400, { fit: 'cover' }).webp({ quality: 80 }).toBuffer();
-      const result = await uploadImage(buf, 'picky/categories');
+      const result = await uploadImage(buf, 'categories');
+      if (category.image && category.image !== result.url) {
+        deleteImage(category.image).catch(() => {});
+      }
       image = result.url;
     }
     // Prevent updating the slug so frontend constants don't break

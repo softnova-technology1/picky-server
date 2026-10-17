@@ -18,7 +18,7 @@ const InventoryService = {
     let inventoryItems = await Inventory.find(filter)
       .populate({
         path: 'product',
-        select: 'name slug price discountPrice images category subCategory sku isActive isFeatured',
+        select: 'name slug price discountPrice images category subCategory sku isActive isFeatured tags',
         populate: { path: 'category', select: 'name slug' },
       })
       .sort({ updatedAt: -1 })
