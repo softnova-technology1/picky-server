@@ -38,12 +38,12 @@ const InventoryService = {
             _id: '$items.product',
             totalSold: {
               $sum: {
-                $cond: [{ $in: ['$status', ['delivered', 'shipped', 'out_for_delivery']] }, '$items.quantity', 0],
+                $cond: [{ $in: ['$status', ['delivered', 'shipped', 'out_for_delivery', 'confirmed', 'processing']] }, '$items.quantity', 0],
               },
             },
             totalReserved: {
               $sum: {
-                $cond: [{ $in: ['$status', ['confirmed', 'processing']] }, '$items.quantity', 0],
+                $cond: [{ $in: ['$status', ['pending', 'payment_pending']] }, '$items.quantity', 0],
               },
             },
           },
@@ -61,12 +61,32 @@ const InventoryService = {
       console.warn('Order aggregation notice:', e.message);
     }
 
+    // Aggregate active in-progress checkout reservations
+    let checkoutReservedMap = {};
+    try {
+      const CheckoutReservation = require('../../models/checkoutReservation.model');
+      const activeReservations = await CheckoutReservation.aggregate([
+        { $match: { status: 'reserved', expiresAt: { $gt: new Date() } } },
+        { $unwind: '$items' },
+        {
+          $group: {
+            _id: '$items.product',
+            totalReserved: { $sum: '$items.quantity' },
+          },
+        },
+      ]);
+      activeReservations.forEach((r) => {
+        if (r._id) checkoutReservedMap[String(r._id)] = r.totalReserved || 0;
+      });
+    } catch (_) {}
+
     // Attach sold, reserved, and normalize
     inventoryItems = inventoryItems.map((item) => {
       const pId = String(item.product?._id || item.product);
       const stats = orderStatsMap[pId] || {};
-      const sold = item.sold !== undefined && item.sold > 0 ? item.sold : (stats.sold || 0);
-      const reserved = item.reserved !== undefined && item.reserved > 0 ? item.reserved : (stats.reserved || 0);
+      const checkoutReserved = checkoutReservedMap[pId] || 0;
+      const sold = Math.max(Number(item.sold) || 0, stats.sold || 0);
+      const reserved = Math.max(Number(item.reserved) || 0, (stats.reserved || 0) + checkoutReserved);
       return {
         ...item,
         sold,
@@ -114,7 +134,15 @@ const InventoryService = {
   },
 
   async updateStock(productId, { quantity, lowStockThreshold, reserved, sold, reason }) {
-    const product = await Product.findById(productId);
+    let pId = productId;
+    let product = await Product.findById(productId);
+    if (!product) {
+      const inv = await Inventory.findById(productId);
+      if (inv) {
+        pId = inv.product?._id || inv.product;
+        product = await Product.findById(pId);
+      }
+    }
     if (!product) throw new AppError('Product not found', 404);
 
     const updateFields = {};
@@ -124,13 +152,13 @@ const InventoryService = {
     if (sold !== undefined) updateFields.sold = Math.max(0, Number(sold));
 
     const inventory = await Inventory.findOneAndUpdate(
-      { product: productId },
+      { product: pId },
       { $set: updateFields },
       { new: true, upsert: true }
     ).populate('product');
 
     if (quantity !== undefined) {
-      await Product.findByIdAndUpdate(productId, { stock: Math.max(0, Number(quantity)) });
+      await Product.findByIdAndUpdate(pId, { stock: Math.max(0, Number(quantity)) });
     }
 
     return inventory;

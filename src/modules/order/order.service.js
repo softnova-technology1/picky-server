@@ -4,6 +4,7 @@ const OrderRepo = require('./order.repository');
 const CartRepo = require('../cart/cart.repository');
 const Cart = require('../../models/cart.model');
 const Inventory = require('../../models/inventory.model');
+const CheckoutReservation = require('../../models/checkoutReservation.model');
 const CouponUsage = require('../../models/couponUsage.model');
 const Coupon = require('../../models/coupon.model');
 const User = require('../../models/user.model');
@@ -64,9 +65,168 @@ const calculateCartPricing = async (user, cart) => {
 
 const OrderService = {
   /**
-   * 1. Create Razorpay Order instance for Frontend Checkout Modal
+   * Reserve stock during Checkout (Available -> Reserved)
    */
-  async createRazorpayOrder(user, { shippingAddress, items, total, totalAmount, subtotal, discountAmount }) {
+  async reserveCheckout(user, { items = [], sessionId }) {
+    if (!sessionId) {
+      sessionId = `sess_${randomBytes(8).toString('hex')}`;
+    }
+
+    let checkoutItems = [];
+    if (Array.isArray(items) && items.length > 0) {
+      checkoutItems = items
+        .map((i) => ({
+          product: (i.productId || i.product || i._id || i.id)?.toString(),
+          quantity: Math.max(1, Number(i.quantity) || 1),
+        }))
+        .filter((i) => i.product);
+    } else if (user) {
+      const cart = await CartRepo.findByUser(user._id || user);
+      if (cart && Array.isArray(cart.items) && cart.items.length > 0) {
+        checkoutItems = cart.items
+          .map((i) => ({
+            product: (i.product?._id || i.product)?.toString(),
+            quantity: Math.max(1, Number(i.quantity) || 1),
+          }))
+          .filter((i) => i.product);
+      }
+    }
+
+    if (checkoutItems.length === 0) {
+      return { sessionId, reserved: false, items: [] };
+    }
+
+    // Check existing active reservation for this session (idempotent / dynamic update)
+    const existing = await CheckoutReservation.findOne({ sessionId, status: 'reserved' });
+    if (existing) {
+      const existingKey = existing.items.map((i) => `${i.product}:${i.quantity}`).sort().join(',');
+      const newKey = checkoutItems.map((i) => `${i.product}:${i.quantity}`).sort().join(',');
+      if (existingKey === newKey) {
+        return { sessionId, reserved: true, items: existing.items };
+      }
+      // Quantities or items changed, release old reservation first
+      for (const item of existing.items) {
+        await Inventory.findOneAndUpdate(
+          { product: item.product },
+          { $inc: { quantity: item.quantity, reserved: -item.quantity } }
+        );
+        await Inventory.updateOne(
+          { product: item.product, reserved: { $lt: 0 } },
+          { $set: { reserved: 0 } }
+        );
+        await Product.findByIdAndUpdate(
+          item.product,
+          { $inc: { stock: item.quantity } }
+        );
+      }
+      existing.status = 'released';
+      await existing.save();
+    }
+
+    // 1. Validate available stock for each item (and auto-init inventory if needed)
+    for (const item of checkoutItems) {
+      let inv = await Inventory.findOne({ product: item.product });
+      if (!inv) {
+        const prod = await Product.findById(item.product).lean();
+        if (prod) {
+          inv = await Inventory.create({
+            product: prod._id,
+            sku: prod.sku || `SKU-${Date.now()}`,
+            quantity: prod.stock || 10,
+            reserved: 0,
+            sold: 0,
+            lowStockThreshold: 5,
+          });
+        }
+      }
+      if (!inv || (inv.quantity || 0) < item.quantity) {
+        const prod = await Product.findById(item.product).select('name').lean();
+        throw new AppError(`"${prod?.name || 'Item'}" has insufficient stock (${inv?.quantity || 0} available).`, 400);
+      }
+    }
+
+    // 2. Decrement Available quantity and increment Reserved stock atomically
+    for (const item of checkoutItems) {
+      await Inventory.findOneAndUpdate(
+        { product: item.product },
+        { $inc: { quantity: -item.quantity, reserved: item.quantity } }
+      );
+      await Inventory.updateOne(
+        { product: item.product, quantity: { $lt: 0 } },
+        { $set: { quantity: 0 } }
+      );
+      await Product.findByIdAndUpdate(
+        item.product,
+        { $inc: { stock: -item.quantity } }
+      );
+      await Product.updateOne(
+        { _id: item.product, stock: { $lt: 0 } },
+        { $set: { stock: 0 } }
+      );
+    }
+
+    // 3. Persist reservation document with TTL
+    await CheckoutReservation.create({
+      sessionId,
+      user: user?._id || user || null,
+      items: checkoutItems,
+      status: 'reserved',
+      expiresAt: new Date(Date.now() + 20 * 60 * 1000), // 20 min hold
+    });
+
+    logger.info(`[CHECKOUT] Reserved ${checkoutItems.length} items for session: ${sessionId}`);
+    return { sessionId, reserved: true, items: checkoutItems };
+  },
+
+  /**
+   * Release reserved stock on Checkout Failure / Cancellation (Restock back to Available)
+   */
+  async releaseCheckout(user, { sessionId, items = [] }) {
+    let itemsToRelease = [];
+
+    if (sessionId) {
+      const resRecord = await CheckoutReservation.findOne({ sessionId, status: 'reserved' });
+      if (resRecord) {
+        itemsToRelease = resRecord.items;
+        resRecord.status = 'released';
+        await resRecord.save();
+      }
+    }
+
+    if (itemsToRelease.length === 0 && Array.isArray(items) && items.length > 0) {
+      itemsToRelease = items
+        .map((i) => ({
+          product: (i.productId || i.product || i._id || i.id)?.toString(),
+          quantity: Math.max(1, Number(i.quantity) || 1),
+        }))
+        .filter((i) => i.product);
+    }
+
+    if (itemsToRelease.length > 0) {
+      for (const item of itemsToRelease) {
+        await Inventory.findOneAndUpdate(
+          { product: item.product },
+          { $inc: { quantity: item.quantity, reserved: -item.quantity } }
+        );
+        await Inventory.updateOne(
+          { product: item.product, reserved: { $lt: 0 } },
+          { $set: { reserved: 0 } }
+        );
+        await Product.findByIdAndUpdate(
+          item.product,
+          { $inc: { stock: item.quantity } }
+        );
+      }
+      logger.info(`[CHECKOUT] Restocked ${itemsToRelease.length} items from released session: ${sessionId || 'manual'}`);
+    }
+
+    return { released: true, count: itemsToRelease.length };
+  },
+
+  /**
+   * 1. Create Razorpay Order instance for Frontend Checkout Modal and Reserve Stock
+   */
+  async createRazorpayOrder(user, { shippingAddress, items, total, totalAmount, subtotal, discountAmount, sessionId }) {
     let cart = await CartRepo.findByUser(user._id);
     if ((!cart || cart.items.length === 0) && items && items.length > 0) {
       const CartService = require('../cart/cart.service');
@@ -112,6 +272,25 @@ const OrderService = {
       },
     });
 
+    // Auto-reserve stock or link existing checkout reservation to this Razorpay session
+    try {
+      if (sessionId) {
+        const existingRes = await CheckoutReservation.findOne({ sessionId, status: 'reserved' });
+        if (existingRes) {
+          existingRes.sessionId = rzOrder.id;
+          await existingRes.save();
+        } else {
+          const itemsToHold = (cart && cart.items.length > 0) ? cart.items : items;
+          await this.reserveCheckout(user, { items: itemsToHold, sessionId: rzOrder.id });
+        }
+      } else {
+        const itemsToHold = (cart && cart.items.length > 0) ? cart.items : items;
+        await this.reserveCheckout(user, { items: itemsToHold, sessionId: rzOrder.id });
+      }
+    } catch (resErr) {
+      logger.warn(`[CHECKOUT] Auto-reserve warning: ${resErr.message}`);
+    }
+
     return {
       razorpayOrderId: rzOrder.id,
       amount: rzOrder.amount, // in paise
@@ -149,6 +328,7 @@ const OrderService = {
     totalAmount,
     courier,
     deliveryMode,
+    sessionId,
   }) {
     let cart = await CartRepo.findByUser(user._id);
     if ((!cart || cart.items.length === 0) && items && items.length > 0) {
@@ -238,33 +418,55 @@ const OrderService = {
         statusHistory: [{ status: 'confirmed', note: 'Prepaid via Razorpay (Online)', timestamp: new Date() }],
       });
 
-      for (const item of formattedItems) {
-        if (item.product) {
-          try {
-            // 1. Decrement Inventory.quantity
-            await Inventory.findOneAndUpdate(
-              { product: item.product },
-              { $inc: { quantity: -item.quantity } },
-              { new: true }
-            );
-            await Inventory.updateOne(
-              { product: item.product, quantity: { $lt: 0 } },
-              { $set: { quantity: 0 } }
-            );
-
-            // 2. Decrement Product.stock (Live sync for Admin Catalog & UI)
-            await Product.findByIdAndUpdate(
-              item.product,
-              { $inc: { stock: -item.quantity } },
-              { new: true }
-            );
-            await Product.updateOne(
-              { _id: item.product, stock: { $lt: 0 } },
-              { $set: { stock: 0 } }
-            );
-            logger.info(`[ORDER] Stock decremented by ${item.quantity} for product: ${item.product}`);
-          } catch (stkErr) {
-            logger.error(`[ORDER] Stock deduction error for ${item.product}: ${stkErr.message}`);
+      // Move from RESERVED to SOLD upon successful payment verification
+      const activeRes = await CheckoutReservation.findOne({
+        $or: [
+          ...(razorpayOrderId ? [{ sessionId: razorpayOrderId }] : []),
+          ...(sessionId ? [{ sessionId }] : []),
+          ...(user?._id ? [{ user: user._id, status: 'reserved' }] : []),
+        ],
+        status: 'reserved',
+      });
+      if (activeRes) {
+        activeRes.status = 'completed';
+        await activeRes.save();
+        for (const item of activeRes.items) {
+          await Inventory.findOneAndUpdate(
+            { product: item.product },
+            { $inc: { reserved: -item.quantity, sold: item.quantity } }
+          );
+          await Inventory.updateOne(
+            { product: item.product, reserved: { $lt: 0 } },
+            { $set: { reserved: 0 } }
+          );
+        }
+        logger.info(`[ORDER] Pre-reserved items moved to SOLD for session: ${activeRes.sessionId}`);
+      } else {
+        // Fallback: Deduct available quantity and increment SOLD
+        for (const item of formattedItems) {
+          if (item.product) {
+            try {
+              await Inventory.findOneAndUpdate(
+                { product: item.product },
+                { $inc: { quantity: -item.quantity, sold: item.quantity } },
+                { new: true }
+              );
+              await Inventory.updateOne(
+                { product: item.product, quantity: { $lt: 0 } },
+                { $set: { quantity: 0 } }
+              );
+              await Product.findByIdAndUpdate(
+                item.product,
+                { $inc: { stock: -item.quantity } },
+                { new: true }
+              );
+              await Product.updateOne(
+                { _id: item.product, stock: { $lt: 0 } },
+                { $set: { stock: 0 } }
+              );
+            } catch (stkErr) {
+              logger.error(`[ORDER] Stock deduction error for ${item.product}: ${stkErr.message}`);
+            }
           }
         }
       }
@@ -283,26 +485,51 @@ const OrderService = {
     session.startTransaction();
     let order;
     try {
-      // Step 1: Deduct inventory and product stock atomically for every cart item
-      for (const item of cart.items) {
-        const updatedInv = await Inventory.findOneAndUpdate(
-          { product: item.product, quantity: { $gte: item.quantity } },
-          { $inc: { quantity: -item.quantity } },
-          { session, new: true }
-        );
-        if (!updatedInv) {
-          throw new AppError(`"${item.name}" is now out of stock. Your payment was not debited.`, 400);
+      // Step 1: Move pre-reserved items to SOLD or deduct directly if unreserved
+      const activeTxRes = await CheckoutReservation.findOne({
+        $or: [
+          ...(razorpayOrderId ? [{ sessionId: razorpayOrderId }] : []),
+          ...(sessionId ? [{ sessionId }] : []),
+          ...(user?._id ? [{ user: user._id, status: 'reserved' }] : []),
+        ],
+        status: 'reserved',
+      }).session(session);
+      if (activeTxRes) {
+        activeTxRes.status = 'completed';
+        await activeTxRes.save({ session });
+        for (const item of activeTxRes.items) {
+          await Inventory.findOneAndUpdate(
+            { product: item.product },
+            { $inc: { reserved: -item.quantity, sold: item.quantity } },
+            { session }
+          );
+          await Inventory.updateOne(
+            { product: item.product, reserved: { $lt: 0 } },
+            { $set: { reserved: 0 } },
+            { session }
+          );
         }
-        await Product.findByIdAndUpdate(
-          item.product,
-          { $inc: { stock: -item.quantity } },
-          { session, new: true }
-        );
-        await Product.updateOne(
-          { _id: item.product, stock: { $lt: 0 } },
-          { $set: { stock: 0 } },
-          { session }
-        );
+      } else {
+        for (const item of cart.items) {
+          const updatedInv = await Inventory.findOneAndUpdate(
+            { product: item.product, quantity: { $gte: item.quantity } },
+            { $inc: { quantity: -item.quantity, sold: item.quantity } },
+            { session, new: true }
+          );
+          if (!updatedInv) {
+            throw new AppError(`"${item.name}" is now out of stock. Your payment was not debited.`, 400);
+          }
+          await Product.findByIdAndUpdate(
+            item.product,
+            { $inc: { stock: -item.quantity } },
+            { session, new: true }
+          );
+          await Product.updateOne(
+            { _id: item.product, stock: { $lt: 0 } },
+            { $set: { stock: 0 } },
+            { session }
+          );
+        }
       }
 
       // Step 2: Create the Order document
@@ -426,6 +653,7 @@ const OrderService = {
     paymentStatus = 'paid',
     razorpayPaymentId = null,
     razorpayOrderId = null,
+    sessionId = null,
     deliveryMode = 'Standard Delivery',
     courier = null,
   }) {
@@ -504,34 +732,56 @@ const OrderService = {
       courier: courier || (deliveryMode === 'pickup' ? 'Self Store Pickup' : 'Standard Surface Delivery'),
     });
 
-    // Deduct inventory & product stock atomically
-    for (const item of formattedItems) {
-      if (item.product) {
-        try {
-          // 1. Decrement Inventory.quantity
-          await Inventory.findOneAndUpdate(
-            { product: item.product },
-            { $inc: { quantity: -item.quantity } },
-            { new: true }
-          );
-          await Inventory.updateOne(
-            { product: item.product, quantity: { $lt: 0 } },
-            { $set: { quantity: 0 } }
-          );
+    // Move from RESERVED to SOLD or decrement available and mark as SOLD
+    const activeDirectRes = await CheckoutReservation.findOne({
+      $or: [
+        ...(sessionId ? [{ sessionId }] : []),
+        ...(razorpayOrderId ? [{ sessionId: razorpayOrderId }] : []),
+        ...(user?._id ? [{ user: user._id, status: 'reserved' }] : []),
+      ],
+      status: 'reserved',
+    });
 
-          // 2. Decrement Product.stock (Live sync for Admin Catalog & UI)
-          await Product.findByIdAndUpdate(
-            item.product,
-            { $inc: { stock: -item.quantity } },
-            { new: true }
-          );
-          await Product.updateOne(
-            { _id: item.product, stock: { $lt: 0 } },
-            { $set: { stock: 0 } }
-          );
-          logger.info(`[ORDER] Stock decremented by ${item.quantity} for product: ${item.product}`);
-        } catch (stkErr) {
-          logger.error(`[ORDER] Stock deduction error for ${item.product}: ${stkErr.message}`);
+    if (activeDirectRes) {
+      activeDirectRes.status = 'completed';
+      await activeDirectRes.save();
+      for (const item of activeDirectRes.items) {
+        await Inventory.findOneAndUpdate(
+          { product: item.product },
+          { $inc: { reserved: -item.quantity, sold: item.quantity } }
+        );
+        await Inventory.updateOne(
+          { product: item.product, reserved: { $lt: 0 } },
+          { $set: { reserved: 0 } }
+        );
+      }
+      logger.info(`[ORDER] Pre-reserved items moved to SOLD for session: ${sessionId || razorpayOrderId}`);
+    } else {
+      for (const item of formattedItems) {
+        if (item.product) {
+          try {
+            await Inventory.findOneAndUpdate(
+              { product: item.product },
+              { $inc: { quantity: -item.quantity, sold: item.quantity } },
+              { new: true }
+            );
+            await Inventory.updateOne(
+              { product: item.product, quantity: { $lt: 0 } },
+              { $set: { quantity: 0 } }
+            );
+            await Product.findByIdAndUpdate(
+              item.product,
+              { $inc: { stock: -item.quantity } },
+              { new: true }
+            );
+            await Product.updateOne(
+              { _id: item.product, stock: { $lt: 0 } },
+              { $set: { stock: 0 } }
+            );
+            logger.info(`[ORDER] Stock moved directly to SOLD for product: ${item.product}`);
+          } catch (stkErr) {
+            logger.error(`[ORDER] Stock deduction error for ${item.product}: ${stkErr.message}`);
+          }
         }
       }
     }
@@ -747,13 +997,46 @@ const OrderService = {
     const existing = await OrderRepo.findById(orderId);
     if (!existing) throw new AppError('Order not found', 404);
 
-    // If Admin cancels the order, restore inventory stock automatically
+    // If status transitions from confirmed/processing to shipped, delivered, or out_for_delivery:
+    // Move from reserved to sold!
+    const wasPendingFulfillment = ['confirmed', 'processing', 'pending'].includes(existing.status);
+    const isFulfilling = ['shipped', 'delivered', 'out_for_delivery'].includes(status);
+
+    if (wasPendingFulfillment && isFulfilling) {
+      for (const item of existing.items) {
+        if (item.product) {
+          await Inventory.findOneAndUpdate(
+            { product: item.product },
+            { $inc: { reserved: -item.quantity, sold: item.quantity } }
+          );
+          await Inventory.updateOne(
+            { product: item.product, reserved: { $lt: 0 } },
+            { $set: { reserved: 0 } }
+          );
+        }
+      }
+    }
+
+    // If Admin cancels the order, restore inventory stock automatically & decrement sold
     if (status === 'cancelled' && existing.status !== 'cancelled') {
       for (const item of existing.items) {
         if (item.product) {
           await Inventory.findOneAndUpdate(
             { product: item.product },
-            { $inc: { quantity: item.quantity } }
+            {
+              $inc: {
+                quantity: item.quantity,
+                sold: -item.quantity,
+              },
+            }
+          );
+          await Inventory.updateOne(
+            { product: item.product, sold: { $lt: 0 } },
+            { $set: { sold: 0 } }
+          );
+          await Product.findByIdAndUpdate(
+            item.product,
+            { $inc: { stock: item.quantity } }
           );
         }
       }
@@ -782,11 +1065,25 @@ const OrderService = {
 
     // If order was not cancelled, restore inventory quantities back
     if (existing.status !== 'cancelled' && Array.isArray(existing.items)) {
+      const wasPendingFulfillment = ['confirmed', 'processing', 'pending'].includes(existing.status);
       for (const item of existing.items) {
         if (item.product) {
           await Inventory.findOneAndUpdate(
             { product: item.product },
-            { $inc: { quantity: item.quantity || 1 } }
+            {
+              $inc: {
+                quantity: item.quantity || 1,
+                sold: -(item.quantity || 1),
+              },
+            }
+          );
+          await Inventory.updateOne(
+            { product: item.product, sold: { $lt: 0 } },
+            { $set: { sold: 0 } }
+          );
+          await Product.findByIdAndUpdate(
+            item.product,
+            { $inc: { stock: item.quantity || 1 } }
           );
         }
       }
