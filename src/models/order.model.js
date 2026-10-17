@@ -45,6 +45,12 @@ const orderSchema = new mongoose.Schema(
     discountAmount: { type: Number, default: 0 },
     shippingFee: { type: Number, default: 0 },
     convenienceFee: { type: Number, default: 0 },
+    giftWrapFee: { type: Number, default: 0 },
+    giftWrap: {
+      isGiftWrapped: { type: Boolean, default: false },
+      fee: { type: Number, default: 0 },
+      message: { type: String, default: '' },
+    },
     total: { type: Number, required: true },
 
     // Payment (Online / Razorpay / Card / UPI / NetBanking / Simulated)

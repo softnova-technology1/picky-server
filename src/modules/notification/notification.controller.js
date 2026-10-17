@@ -56,12 +56,16 @@ const NotificationController = {
           const customerName = ord.user?.name || 'Customer';
           const totalAmt = ord.total ? `₹${ord.total.toLocaleString('en-IN')}` : '₹0';
           const itemsCount = ord.items?.length || 1;
+          const isGift = Boolean(ord.giftWrap?.isGiftWrapped);
+          const giftMessage = (ord.giftWrap?.message || '').trim();
+          const giftMsgText = isGift ? (giftMessage ? ` • 🎁 Gift Message: "${giftMessage}"` : ' • 🎁 Gift Wrap Included (No custom message)') : '';
+          const giftTitleTag = isGift ? ' 🎁 [GIFT WRAP]' : '';
           await Notification.create({
             entityKey,
             type: 'order',
             category: 'Orders',
-            title: `New Order #${ord.orderNumber} received`,
-            message: `${customerName} placed order for ${totalAmt} (${itemsCount} item${itemsCount > 1 ? 's' : ''}) with Online Payment.`,
+            title: `New Order #${ord.orderNumber} received${giftTitleTag}`,
+            message: `${customerName} placed order for ${totalAmt} (${itemsCount} item${itemsCount > 1 ? 's' : ''}) with Online Payment.${giftMsgText}`,
             unread: true,
             starred: false,
             link: '/softpicky-sn2026/orders',
@@ -71,6 +75,9 @@ const NotificationController = {
               orderNumber: ord.orderNumber,
               customerName,
               total: ord.total,
+              isGiftWrapped: isGift,
+              giftMessage: isGift ? (giftMessage || 'No message') : null,
+              giftWrapFee: ord.giftWrap?.fee || 0,
             },
             createdAt: ord.createdAt || new Date(),
           });

@@ -26,6 +26,43 @@ const generateOrderNumber = () => {
   return `PKY-${date}-${suffix}`;
 };
 
+const triggerOrderNotification = async (order, user, shippingAddress) => {
+  try {
+    const Notification = require('../../models/notification.model');
+    const isGift = Boolean(order.giftWrap?.isGiftWrapped);
+    const giftMessage = (order.giftWrap?.message || '').trim();
+    const giftMsgText = isGift ? (giftMessage ? ` • 🎁 Gift Message: "${giftMessage}"` : ' • 🎁 Gift Wrap Included (No custom message)') : '';
+    const giftTitleTag = isGift ? ' 🎁 [GIFT WRAP]' : '';
+    const customerName = user?.name || shippingAddress?.fullName || 'Customer';
+    const totalAmt = order.total ? `₹${order.total.toLocaleString('en-IN')}` : '₹0';
+    const itemsCount = order.items?.length || 1;
+
+    await Notification.create({
+      entityKey: `order-${order._id}`,
+      type: 'order',
+      category: 'Orders',
+      title: `New Order #${order.orderNumber} received${giftTitleTag}`,
+      message: `${customerName} placed order for ${totalAmt} (${itemsCount} item${itemsCount > 1 ? 's' : ''}) with ${order.paymentMethod || 'Online'} Payment.${giftMsgText}`,
+      unread: true,
+      starred: false,
+      link: '/softpicky-sn2026/orders',
+      linkText: 'View Order',
+      metadata: {
+        orderId: order._id,
+        orderNumber: order.orderNumber,
+        customerName,
+        total: order.total,
+        isGiftWrapped: isGift,
+        giftMessage: isGift ? (giftMessage || 'No message') : null,
+        giftWrapFee: order.giftWrap?.fee || 0,
+      },
+      createdAt: order.createdAt || new Date(),
+    });
+  } catch (err) {
+    logger.warn(`[NOTIFICATION] Could not create order notification: ${err.message}`);
+  }
+};
+
 const calculateCartPricing = async (user, cart) => {
   const subtotal = cart.items.reduce((sum, i) => sum + i.price * i.quantity, 0);
   let discountAmount = cart.couponDiscount || 0;
@@ -87,9 +124,9 @@ const OrderService = {
         }
       }
       const pricing = await calculateCartPricing(user, cart);
-      calculatedTotal = pricing.total;
       calculatedSubtotal = pricing.subtotal;
       calculatedDiscount = pricing.discountAmount;
+      calculatedTotal = Number(total || totalAmount) || pricing.total;
     } else if (items && items.length > 0) {
       calculatedSubtotal = Number(subtotal) || items.reduce((sum, i) => sum + (Number(i.price) || 0) * (Number(i.quantity) || 1), 0);
       calculatedDiscount = Number(discountAmount) || 0;
@@ -145,11 +182,16 @@ const OrderService = {
     shippingFee,
     deliveryFee,
     convenienceFee,
+    giftWrap,
+    giftWrapFee,
     total,
     totalAmount,
     courier,
     deliveryMode,
   }) {
+    const isGift = Boolean(giftWrap?.isGiftWrapped || giftWrap === true);
+    const calculatedGiftWrapFee = isGift ? (Number(giftWrap?.fee !== undefined ? giftWrap.fee : giftWrapFee) || 0) : 0;
+    const giftMessage = isGift ? (giftWrap?.message || '').trim() : '';
     let cart = await CartRepo.findByUser(user._id);
     if ((!cart || cart.items.length === 0) && items && items.length > 0) {
       const CartService = require('../cart/cart.service');
@@ -187,14 +229,7 @@ const OrderService = {
       let calculatedConvenience = Number(convenienceFee) || 0;
       if ((isNaN(calculatedShipping) || calculatedShipping === 0) && finalTotal > (calculatedSubtotal - calculatedDiscount)) {
         const diff = finalTotal - (calculatedSubtotal - calculatedDiscount);
-        if (calculatedConvenience > 0) {
-          calculatedShipping = Math.max(0, diff - calculatedConvenience);
-        } else if (diff === 42) {
-          calculatedShipping = 40;
-          calculatedConvenience = 2;
-        } else {
-          calculatedShipping = diff;
-        }
+        calculatedShipping = Math.max(0, diff - (calculatedConvenience || 0) - (calculatedGiftWrapFee || 0));
       }
       if (isNaN(calculatedShipping)) calculatedShipping = 0;
 
@@ -227,6 +262,12 @@ const OrderService = {
         discountAmount: calculatedDiscount,
         shippingFee: calculatedShipping,
         convenienceFee: calculatedConvenience,
+        giftWrapFee: calculatedGiftWrapFee,
+        giftWrap: {
+          isGiftWrapped: isGift,
+          fee: calculatedGiftWrapFee,
+          message: giftMessage,
+        },
         total: finalTotal,
         paymentMethod: 'razorpay',
         paymentStatus: 'paid',
@@ -237,6 +278,8 @@ const OrderService = {
         status: 'confirmed',
         statusHistory: [{ status: 'confirmed', note: 'Prepaid via Razorpay (Online)', timestamp: new Date() }],
       });
+
+      triggerOrderNotification(order, user, shippingAddress);
 
       for (const item of formattedItems) {
         if (item.product) {
@@ -321,8 +364,14 @@ const OrderService = {
             shippingAddress,
             subtotal,
             discountAmount,
-            shippingFee: Number(shippingFee !== undefined && shippingFee !== null ? shippingFee : deliveryFee) || (Number(total) > (Number(subtotal) - Number(discountAmount || 0)) ? Math.max(0, Number(total) - (Number(subtotal) - Number(discountAmount || 0)) - (Number(convenienceFee) || 0)) : 0),
+            shippingFee: Number(shippingFee !== undefined && shippingFee !== null ? shippingFee : deliveryFee) || (Number(total) > (Number(subtotal) - Number(discountAmount || 0)) ? Math.max(0, Number(total) - (Number(subtotal) - Number(discountAmount || 0)) - (Number(convenienceFee) || 0) - (calculatedGiftWrapFee || 0)) : 0),
             convenienceFee: Number(convenienceFee) || 0,
+            giftWrapFee: calculatedGiftWrapFee,
+            giftWrap: {
+              isGiftWrapped: isGift,
+              fee: calculatedGiftWrapFee,
+              message: giftMessage,
+            },
             total,
             paymentMethod: 'razorpay',
             paymentStatus: 'paid',
@@ -406,6 +455,8 @@ const OrderService = {
     NotificationService.sendOrderConfirmed(user.phone, user.name || 'Customer', order.orderNumber, total)
       .catch((err) => logger.error(`[WATI] Order confirmed notification failed: ${err.message}`));
 
+    triggerOrderNotification(order, user, shippingAddress);
+
     return order;
   },
 
@@ -420,6 +471,8 @@ const OrderService = {
     shippingFee = 0,
     deliveryFee,
     convenienceFee = 0,
+    giftWrap,
+    giftWrapFee,
     total,
     totalAmount,
     paymentMethod = 'card',
@@ -438,19 +491,16 @@ const OrderService = {
 
     const calculatedSubtotal = Number(subtotal) || items.reduce((sum, i) => sum + (Number(i.price) || 0) * (Number(i.quantity) || 1), 0);
     const calculatedDiscount = Number(discountAmount) || 0;
+    const isGift = Boolean(giftWrap?.isGiftWrapped || giftWrap === true);
+    const calculatedGiftWrapFee = isGift ? (Number(giftWrap?.fee !== undefined ? giftWrap.fee : giftWrapFee) || 0) : 0;
+    const giftMessage = isGift ? (giftWrap?.message || '').trim() : '';
+
     let calculatedShipping = Number(shippingFee !== undefined && shippingFee !== null && shippingFee !== 0 ? shippingFee : deliveryFee);
     let calculatedConvenience = Number(convenienceFee) || 0;
-    const finalTotal = Number(total || totalAmount) || Math.max(0, calculatedSubtotal - calculatedDiscount + (calculatedShipping || 0) + calculatedConvenience);
+    const finalTotal = Number(total || totalAmount) || Math.max(0, calculatedSubtotal - calculatedDiscount + (calculatedShipping || 0) + calculatedConvenience + calculatedGiftWrapFee);
     if ((isNaN(calculatedShipping) || calculatedShipping === 0) && finalTotal > (calculatedSubtotal - calculatedDiscount)) {
       const diff = finalTotal - (calculatedSubtotal - calculatedDiscount);
-      if (calculatedConvenience > 0) {
-        calculatedShipping = Math.max(0, diff - calculatedConvenience);
-      } else if (diff === 42) {
-        calculatedShipping = 40;
-        calculatedConvenience = 2;
-      } else {
-        calculatedShipping = diff;
-      }
+      calculatedShipping = Math.max(0, diff - calculatedConvenience - calculatedGiftWrapFee);
     }
     if (isNaN(calculatedShipping)) calculatedShipping = 0;
 
@@ -494,6 +544,12 @@ const OrderService = {
       discountAmount: calculatedDiscount,
       shippingFee: calculatedShipping,
       convenienceFee: calculatedConvenience,
+      giftWrapFee: calculatedGiftWrapFee,
+      giftWrap: {
+        isGiftWrapped: isGift,
+        fee: calculatedGiftWrapFee,
+        message: giftMessage,
+      },
       total: finalTotal,
       paymentMethod,
       paymentStatus: paymentStatus || 'paid',
@@ -503,6 +559,8 @@ const OrderService = {
       statusHistory: [{ status: 'confirmed', note: `Order placed via ${paymentMethod}`, timestamp: new Date() }],
       courier: courier || (deliveryMode === 'pickup' ? 'Self Store Pickup' : 'Standard Surface Delivery'),
     });
+
+    triggerOrderNotification(order, user, shippingAddress);
 
     // Deduct inventory & product stock atomically
     for (const item of formattedItems) {

@@ -3,7 +3,8 @@ const { ApiResponse } = require('../../utils/apiResponse');
 
 const list = async (req, res, next) => {
   try {
-    const categories = await CategoryService.list();
+    const includeInactive = req.query.all === 'true' || req.query.includeInactive === 'true';
+    const categories = await CategoryService.list(includeInactive);
     return res.json(ApiResponse.success(categories));
   } catch (err) { next(err); }
 };

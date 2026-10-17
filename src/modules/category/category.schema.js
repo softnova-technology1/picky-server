@@ -12,6 +12,10 @@ const createCategorySchema = z.object({
   description: z.string().optional(),
   sortOrder: z.coerce.number().int().optional(),
   characteristics: z.array(characteristicFieldSchema).optional(),
+  isActive: z.preprocess(
+    (val) => (val === 'true' || val === true ? true : val === 'false' || val === false ? false : val),
+    z.boolean()
+  ).optional(),
 });
 
 const updateCategorySchema = createCategorySchema.partial();

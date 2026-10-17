@@ -41,8 +41,24 @@ const settingsSchema = new mongoose.Schema(
     },
     shipping: {
       freeShippingThreshold: { type: Number, default: 999 },
-      standardShippingFee: { type: Number, default: 49 },
       codAvailable: { type: Boolean, default: false },
+      // All Over Tamil Nadu
+      tamilNadu: {
+        shippingFee: { type: Number, default: 40 },
+        estimatedDays: { type: String, default: '2-3 Business Days' },
+      },
+      // All Over India (Other States)
+      allIndia: {
+        shippingFee: { type: Number, default: 70 },
+        estimatedDays: { type: String, default: '4-6 Business Days' },
+      },
+      standardShippingFee: { type: Number, default: 70 },
+      estimatedDeliveryDays: { type: String, default: '4-6 Business Days' },
+      // Gift Wrapping Service
+      giftWrap: {
+        enabled: { type: Boolean, default: true },
+        fee: { type: Number, default: 30 },
+      },
     },
     branding: {
       logoUrl: { type: String, default: '/images/logo.png' },
@@ -50,7 +66,7 @@ const settingsSchema = new mongoose.Schema(
       accentColor: { type: String, default: '#ec4899' },
     },
   },
-  { timestamps: true }
+  { timestamps: true, strict: false }
 );
 
 module.exports = mongoose.model('Settings', settingsSchema);
