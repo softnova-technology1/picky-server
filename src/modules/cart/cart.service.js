@@ -160,7 +160,7 @@ const CartService = {
             quantity: targetQty,
             price: existing.price,
             name: existing.name,
-            image: existing.image,
+            image: (typeof existing.image === 'string' && existing.image.startsWith('data:image/')) ? null : (existing.image || null),
           },
         ];
       } else {

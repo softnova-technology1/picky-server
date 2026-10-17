@@ -19,13 +19,16 @@ const clearCategoryCache = () => {
 const CategoryService = {
   clearCache: clearCategoryCache,
 
-  async list() {
-    if (categoryCache && Date.now() - categoryCacheTime < CAT_CACHE_TTL) {
+  async list(includeInactive = false) {
+    if (!includeInactive && categoryCache && Date.now() - categoryCacheTime < CAT_CACHE_TTL) {
       return categoryCache;
     }
-    const cats = await CategoryRepo.findAll();
-    categoryCache = cats;
-    categoryCacheTime = Date.now();
+    const filter = includeInactive ? {} : { isActive: true };
+    const cats = await CategoryRepo.findAll(filter);
+    if (!includeInactive) {
+      categoryCache = cats;
+      categoryCacheTime = Date.now();
+    }
     return cats;
   },
 

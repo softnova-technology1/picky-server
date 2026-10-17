@@ -30,6 +30,7 @@ const createProductSchema = z.preprocess(
   z.object({
     name: z.string().min(1, 'Product name required').max(200),
     description: z.string().optional(),
+    shortDescription: z.string().optional(),
     category: z.string().min(1, 'Category ID required'),
     subCategory: z.string().optional(),
     sku: z.string().optional(),
@@ -52,12 +53,31 @@ const createProductSchema = z.preprocess(
       key: z.string().min(1),
       value: z.preprocess((v) => Array.isArray(v) ? v.join(', ') : (v === undefined || v === null ? '' : String(v)), z.string()),
     })).optional()),
+    variants: z.preprocess((val) => {
+      if (typeof val === 'string') {
+        try {
+          return JSON.parse(val);
+        } catch (_) {
+          return { type: 'none', options: [] };
+        }
+      }
+      return val;
+    }, z.object({
+      type: z.string().optional(),
+      options: z.array(z.string()).optional(),
+      default: z.string().optional(),
+      colors: z.array(z.any()).optional(),
+    }).optional()),
     tags: z.preprocess(parseTags, z.array(z.string()).optional()),
     imagePositions: z.preprocess((val) => {
       if (!val) return [];
       return Array.isArray(val) ? val : [val];
     }, z.array(z.string()).optional()),
     isFeatured: z.preprocess(
+      (val) => (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val)),
+      z.boolean().optional()
+    ),
+    isActive: z.preprocess(
       (val) => (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val)),
       z.boolean().optional()
     ),
@@ -81,6 +101,7 @@ const updateProductSchema = z.preprocess(
   z.object({
     name: z.string().min(1).max(200).optional(),
     description: z.string().optional(),
+    shortDescription: z.string().optional(),
     category: z.string().min(1).optional(),
     subCategory: z.string().optional(),
     sku: z.string().optional(),
@@ -103,12 +124,31 @@ const updateProductSchema = z.preprocess(
       key: z.string().min(1),
       value: z.preprocess((v) => Array.isArray(v) ? v.join(', ') : (v === undefined || v === null ? '' : String(v)), z.string()),
     })).optional()),
+    variants: z.preprocess((val) => {
+      if (typeof val === 'string') {
+        try {
+          return JSON.parse(val);
+        } catch (_) {
+          return { type: 'none', options: [] };
+        }
+      }
+      return val;
+    }, z.object({
+      type: z.string().optional(),
+      options: z.array(z.string()).optional(),
+      default: z.string().optional(),
+      colors: z.array(z.any()).optional(),
+    }).optional()),
     tags: z.preprocess(parseTags, z.array(z.string()).optional()),
     imagePositions: z.preprocess((val) => {
       if (!val) return [];
       return Array.isArray(val) ? val : [val];
     }, z.array(z.string()).optional()),
     isFeatured: z.preprocess(
+      (val) => (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val)),
+      z.boolean().optional()
+    ),
+    isActive: z.preprocess(
       (val) => (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val)),
       z.boolean().optional()
     ),
