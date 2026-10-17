@@ -38,7 +38,15 @@ const CustomerService = {
       {
         $group: {
           _id: '$user',
-          totalSpent: { $sum: { $ifNull: ['$pricing.finalTotal', '$totalAmount'] } },
+          totalSpent: {
+            $sum: {
+              $cond: [
+                { $ne: ['$status', 'cancelled'] },
+                { $ifNull: ['$total', { $ifNull: ['$pricing.finalTotal', { $ifNull: ['$totalAmount', { $ifNull: ['$subtotal', 0] }] }] }] },
+                0,
+              ],
+            },
+          },
           totalOrders: { $sum: 1 },
           lastOrderDate: { $max: '$createdAt' },
         },
@@ -55,8 +63,9 @@ const CustomerService = {
       return {
         ...u,
         city: u.city || u.defaultAddress?.city || u.addresses?.[0]?.city || 'N/A',
+        dob: u.dob || null,
         joinedDate: u.createdAt,
-        totalOrders: stat.totalOrders || u.orderCount || 0,
+        totalOrders: stat.totalOrders !== undefined ? stat.totalOrders : (u.orderCount || 0),
         totalSpent: stat.totalSpent || 0,
         lastOrderDate: stat.lastOrderDate || null,
       };
@@ -75,7 +84,11 @@ const CustomerService = {
       .sort({ createdAt: -1 })
       .lean();
 
-    const totalSpent = orders.reduce((sum, o) => sum + (o.pricing?.finalTotal || o.totalAmount || 0), 0);
+    const totalSpent = orders.reduce((sum, o) => {
+      if (o.status === 'cancelled') return sum;
+      const amount = Number(o.total ?? o.pricing?.finalTotal ?? o.totalAmount ?? o.subtotal ?? 0);
+      return sum + (isNaN(amount) ? 0 : amount);
+    }, 0);
 
     return {
       customer: {
@@ -85,6 +98,26 @@ const CustomerService = {
       },
       orders,
     };
+  },
+
+  async bulkDelete(ids) {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new AppError('No customer IDs provided', 400);
+    }
+    // Safety check: Prevent deleting users with role 'admin'
+    const result = await User.deleteMany({
+      _id: { $in: ids },
+      role: { $ne: 'admin' },
+    });
+    return { deletedCount: result.deletedCount };
+  },
+
+  async delete(id) {
+    const user = await User.findById(id);
+    if (!user) throw new AppError('Customer not found', 404);
+    if (user.role === 'admin') throw new AppError('Cannot delete administrator accounts', 403);
+    await User.findByIdAndDelete(id);
+    return { success: true };
   },
 };
 

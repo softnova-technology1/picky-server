@@ -155,11 +155,12 @@ const AuthService = {
     await redis.del(`refresh:${userId.toString()}`); // ensure string key for Redis
   },
 
-  async updateProfile(userId, { name, email, dob, defaultAddress, addresses }) {
+  async updateProfile(userId, { name, email, dob, dateOfBirth, defaultAddress, addresses }) {
     const update = {};
     if (name !== undefined) update.name = name.trim();
     if (email !== undefined) update.email = email.toLowerCase().trim();
-    if (dob !== undefined) update.dob = dob.trim();
+    const dobVal = dob !== undefined ? dob : dateOfBirth;
+    if (dobVal !== undefined && dobVal !== null) update.dob = typeof dobVal === 'string' ? dobVal.trim() : dobVal;
     if (defaultAddress !== undefined) update.defaultAddress = defaultAddress;
     if (addresses !== undefined) update.addresses = addresses;
 

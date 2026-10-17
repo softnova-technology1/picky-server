@@ -7,6 +7,9 @@ const { requireRole } = require('../../middleware/role.middleware');
 router.use(authenticate, requireRole('admin'));
 
 router.get('/', CustomerController.list);
+router.post('/bulk-delete', CustomerController.bulkDelete);
 router.get('/:id', CustomerController.getById);
+router.delete('/:id', CustomerController.delete);
 
 module.exports = router;
+

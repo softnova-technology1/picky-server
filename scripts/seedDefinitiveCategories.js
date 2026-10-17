@@ -6,12 +6,16 @@ const Category = require('../src/models/category.model');
 const SubCategory = require('../src/models/subcategory.model');
 const Product = require('../src/models/product.model');
 
+const S3_BUCKET = process.env.AWS_S3_BUCKET_NAME || 'picky-e-com';
+const AWS_REGION = process.env.AWS_REGION || 'ap-southeast-1';
+const getS3Url = (slug) => `https://${S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com/picky/categories/${slug}.webp`;
+
 const DEFINITIVE_CATEGORIES = [
   {
-    name: "Women's Fashion",
-    slug: 'womens-fashion',
+    name: "Fashion",
+    slug: 'fashion',
     description: 'Sarees, Kurtis, Leggings, Nightwear, Dupattas',
-    image: '',
+    image: getS3Url('fashion'),
     sortOrder: 1,
     isActive: true,
     subcategories: [
@@ -26,7 +30,7 @@ const DEFINITIVE_CATEGORIES = [
     name: 'Home & Kitchen',
     slug: 'home-kitchen',
     description: 'Storage boxes, Choppers, Organizers, Cookware',
-    image: '',
+    image: getS3Url('home-kitchen'),
     sortOrder: 2,
     isActive: true,
     subcategories: [
@@ -40,7 +44,7 @@ const DEFINITIVE_CATEGORIES = [
     name: 'Artificial Jewellery',
     slug: 'artificial-jewellery',
     description: 'Earrings, Chains, Bangles, Necklace sets',
-    image: '',
+    image: getS3Url('artificial-jewellery'),
     sortOrder: 3,
     isActive: true,
     subcategories: [
@@ -54,7 +58,7 @@ const DEFINITIVE_CATEGORIES = [
     name: 'Beauty & Personal Care',
     slug: 'beauty-personal-care',
     description: 'Hair accessories, skincare, herbal products',
-    image: '',
+    image: getS3Url('beauty-personal-care'),
     sortOrder: 4,
     isActive: true,
     subcategories: [
@@ -67,7 +71,7 @@ const DEFINITIVE_CATEGORIES = [
     name: 'Mobile Accessories',
     slug: 'mobile-accessories',
     description: 'Cases, Chargers, Cables, Stands, Earbuds',
-    image: '',
+    image: getS3Url('mobile-accessories'),
     sortOrder: 5,
     isActive: true,
     subcategories: [
@@ -82,7 +86,7 @@ const DEFINITIVE_CATEGORIES = [
     name: 'Traditional Tamil Products',
     slug: 'traditional-tamil-products',
     description: 'Sungudi sarees, brass items, Tanjore crafts',
-    image: '',
+    image: getS3Url('traditional-tamil-products'),
     sortOrder: 6,
     isActive: true,
     subcategories: [
@@ -95,7 +99,7 @@ const DEFINITIVE_CATEGORIES = [
     name: 'Snacks & Foods',
     slug: 'snacks-foods',
     description: 'Murukku, mixture, pickles, podi, sweets',
-    image: '',
+    image: getS3Url('snacks-foods'),
     sortOrder: 7,
     isActive: true,
     subcategories: [
@@ -110,7 +114,7 @@ const DEFINITIVE_CATEGORIES = [
     name: 'Home Décor',
     slug: 'home-decor',
     description: 'Wall décor, artificial plants, lamps, organizers',
-    image: '',
+    image: getS3Url('home-decor'),
     sortOrder: 8,
     isActive: true,
     subcategories: [
@@ -124,7 +128,7 @@ const DEFINITIVE_CATEGORIES = [
     name: 'Kids Products',
     slug: 'kids-products',
     description: 'Toys, stationery, school accessories',
-    image: '',
+    image: getS3Url('kids-products'),
     sortOrder: 9,
     isActive: true,
     subcategories: [
@@ -137,7 +141,7 @@ const DEFINITIVE_CATEGORIES = [
     name: 'Fitness Products',
     slug: 'fitness-products',
     description: 'Resistance bands, yoga accessories, bottles',
-    image: '',
+    image: getS3Url('fitness-products'),
     sortOrder: 10,
     isActive: true,
     subcategories: [
@@ -187,7 +191,7 @@ async function runSeed() {
       name: cat.name,
       slug: cat.slug,
       description: cat.description,
-      image: '',
+      image: cat.image || '',
       sortOrder: cat.sortOrder,
       isActive: true,
     });
@@ -216,7 +220,7 @@ async function runSeed() {
   if (products.length > 0) {
     console.log(`Updating ${products.length} existing products to point to new category IDs...`);
     for (const prod of products) {
-      let targetCatId = createdCategoryMap['womens-fashion'];
+      let targetCatId = createdCategoryMap['fashion'];
       let targetSub = 'Sarees';
 
       const pName = (prod.name || '').toLowerCase();
@@ -227,10 +231,10 @@ async function runSeed() {
         targetCatId = createdCategoryMap['beauty-personal-care'];
         targetSub = 'Herbal products';
       } else if (pName.includes('kurt') || pName.includes('krishh')) {
-        targetCatId = createdCategoryMap['womens-fashion'];
+        targetCatId = createdCategoryMap['fashion'];
         targetSub = 'Kurtis';
       } else if (pName.includes('saree')) {
-        targetCatId = createdCategoryMap['womens-fashion'];
+        targetCatId = createdCategoryMap['fashion'];
         targetSub = 'Sarees';
       }
 
