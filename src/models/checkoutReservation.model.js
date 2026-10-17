@@ -19,7 +19,7 @@ const checkoutReservationSchema = new mongoose.Schema(
     expiresAt: {
       type: Date,
       default: () => new Date(Date.now() + 20 * 60 * 1000), // 20 minutes auto-expiration
-      index: { expires: 0 },
+      index: true,
     },
   },
   { timestamps: true }
