@@ -151,7 +151,7 @@ const RAW_PRODUCTS = [
   {
     name: 'Temple Jewellery Kemp Stone Choker Necklace Set',
     slug: 'temple-jewellery-kemp-stone-choker-necklace-set',
-    categorySlug: 'jewellery',
+    categorySlug: 'artificial-jewellery',
     subCategory: 'Necklaces',
     sku: 'AJ-NEC-001',
     price: 1999,
@@ -170,7 +170,7 @@ const RAW_PRODUCTS = [
   {
     name: 'Silver Oxidized Peacock Jhumka Earrings',
     slug: 'silver-oxidized-peacock-jhumka-earrings',
-    categorySlug: 'jewellery',
+    categorySlug: 'artificial-jewellery',
     subCategory: 'Earrings',
     sku: 'AJ-JHM-002',
     price: 599,
@@ -191,7 +191,7 @@ const RAW_PRODUCTS = [
   {
     name: 'Herbal Amla Bhringraj Hair Growth Oil (200ml)',
     slug: 'herbal-amla-bhringraj-hair-growth-oil-200ml',
-    categorySlug: 'beauty',
+    categorySlug: 'beauty-personal-care',
     subCategory: 'Haircare',
     sku: 'BP-OIL-001',
     price: 599,
@@ -210,7 +210,7 @@ const RAW_PRODUCTS = [
   {
     name: 'Kumkumadi Radiance Face Glow Oil (30ml)',
     slug: 'kumkumadi-radiance-face-glow-oil-30ml',
-    categorySlug: 'beauty',
+    categorySlug: 'beauty-personal-care',
     subCategory: 'Skincare',
     sku: 'BP-OIL-002',
     price: 999,
@@ -271,7 +271,7 @@ const RAW_PRODUCTS = [
   {
     name: 'Special Pure Ghee Tirunelveli Halwa (500g)',
     slug: 'special-pure-ghee-tirunelveli-halwa-500g',
-    categorySlug: 'sweets-snacks',
+    categorySlug: 'snacks-foods',
     subCategory: 'Sweets',
     sku: 'SS-HLW-001',
     price: 499,
@@ -292,7 +292,7 @@ const RAW_PRODUCTS = [
   {
     name: 'Premium 100% Linen Cotton Formal Shirt',
     slug: 'premium-100-linen-cotton-formal-shirt',
-    categorySlug: 'mens-fashion',
+    categorySlug: 'womens-fashion',
     subCategory: 'Shirts',
     sku: 'MF-SHT-001',
     price: 1799,
@@ -311,7 +311,7 @@ const RAW_PRODUCTS = [
   {
     name: 'Heavyweight 240 GSM Oversized Cotton T-Shirt',
     slug: 'heavyweight-240-gsm-oversized-cotton-t-shirt',
-    categorySlug: 'mens-fashion',
+    categorySlug: 'womens-fashion',
     subCategory: 'T-Shirts',
     sku: 'MF-TSH-002',
     price: 999,
@@ -332,8 +332,8 @@ const RAW_PRODUCTS = [
   {
     name: 'Orthopedic Cushion Comfort Walk Sandals for Women',
     slug: 'orthopedic-cushion-comfort-walk-sandals-women',
-    categorySlug: 'footwear',
-    subCategory: 'Women Footwear',
+    categorySlug: 'womens-fashion',
+    subCategory: 'Footwear',
     sku: 'FW-SND-001',
     price: 1299,
     discountPrice: 799,
@@ -352,7 +352,7 @@ const RAW_PRODUCTS = [
   {
     name: 'Wooden Montessori Learning Puzzle & Sorting Blocks',
     slug: 'wooden-montessori-learning-puzzle-sorting-blocks',
-    categorySlug: 'toys-kids',
+    categorySlug: 'kids-products',
     subCategory: 'Educational Toys',
     sku: 'TK-TOY-001',
     price: 899,
@@ -372,7 +372,7 @@ const RAW_PRODUCTS = [
   {
     name: 'Waterproof Anti-Theft Laptop Backpack with USB Port (30L)',
     slug: 'waterproof-anti-theft-laptop-backpack-usb-port-30l',
-    categorySlug: 'bags-wallets',
+    categorySlug: 'womens-fashion',
     subCategory: 'Backpacks',
     sku: 'BW-BAG-001',
     price: 2499,

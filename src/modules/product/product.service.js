@@ -57,6 +57,14 @@ const ProductService = {
       if (query.maxPrice !== undefined) filter.basePrice.$lte = Number(query.maxPrice);
     }
 
+    // Featured & Tag filtering
+    if (query.isFeatured !== undefined) {
+      filter.isFeatured = query.isFeatured === 'true' || query.isFeatured === true;
+    }
+    if (query.tag) {
+      filter.tags = { $in: [new RegExp(`^${query.tag}$`, 'i'), query.tag] };
+    }
+
     const [data, total] = await Promise.all([
       ProductRepo.find(filter, skip, limit, query.sort),
       ProductRepo.count(filter),
