@@ -1,3 +1,4 @@
+
 {
   "name": "picky-server",
   "version": "1.0.0",
@@ -7,7 +8,11 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "lint": "eslint src/**/*.js",
-    "seed": "node scripts/seedCategories.js && node scripts/seedProducts.js && node scripts/seedCustomers.js && node scripts/createAdmin.js"
+    "seed": "node scripts/seedDefinitiveCategories.js && node scripts/seedAllRealProductsS3.js",
+    "seed:categories": "node scripts/seedDefinitiveCategories.js",
+    "seed:products": "node scripts/seedAllRealProductsS3.js",
+    "wipe:products": "node scripts/wipeAllProductsAndS3.js",
+    "db:analyze": "node scripts/analyzeDb.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1126.0",

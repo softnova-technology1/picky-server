@@ -1,16 +1,19 @@
 const cron = require('node-cron');
 const Coupon = require('../models/coupon.model');
+const Discount = require('../models/discount.model');
 const logger = require('../utils/logger');
 
 /**
- * Coupon Expiration Maintenance Job
+ * Promotion (Coupon & Flash Sales) Expiration Job
  * Runs daily at midnight (0 0 * * *)
- * Automatically deactivates expired coupons.
+ * Automatically deactivates expired coupons and discounts.
  */
 const runCouponCleanupJob = async () => {
   try {
     const now = new Date();
-    const result = await Coupon.updateMany(
+
+    // 1. Deactivate expired coupons
+    const couponResult = await Coupon.updateMany(
       {
         isActive: true,
         endsAt: { $ne: null, $lt: now },
@@ -20,11 +23,24 @@ const runCouponCleanupJob = async () => {
       }
     );
 
-    if (result.modifiedCount > 0) {
-      logger.info(`⏰ [CRON] Coupon Cleanup: Deactivated ${result.modifiedCount} expired coupon(s).`);
+    // 2. Deactivate expired discounts / flash sales
+    const discountResult = await Discount.updateMany(
+      {
+        isActive: true,
+        endsAt: { $ne: null, $lt: now },
+      },
+      {
+        $set: { isActive: false },
+      }
+    );
+
+    if (couponResult.modifiedCount > 0 || discountResult.modifiedCount > 0) {
+      logger.info(
+        `⏰ [CRON] Promotion Cleanup: Deactivated ${couponResult.modifiedCount} coupon(s) and ${discountResult.modifiedCount} flash sale(s).`
+      );
     }
   } catch (err) {
-    logger.error(`❌ [CRON] Coupon Cleanup Job Error: ${err.message}`);
+    logger.error(`❌ [CRON] Promotion Cleanup Job Error: ${err.message}`);
   }
 };
 

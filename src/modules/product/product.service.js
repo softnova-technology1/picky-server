@@ -205,6 +205,14 @@ const ProductService = {
     clearProductCache();
     return ProductRepo.delete(id);
   },
+
+  async toggleStatus(id) {
+    const product = await ProductRepo.findById(id);
+    if (!product) throw new AppError('Product not found', 404);
+    const updated = await ProductRepo.update(id, { isActive: !product.isActive });
+    clearProductCache();
+    return updated;
+  },
 };
 
 module.exports = ProductService;

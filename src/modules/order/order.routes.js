@@ -17,6 +17,8 @@ router.post(
 );
 
 // ─── Customer Order Creation & List ──────────────────────────────────────
+router.post('/checkout/reserve', authenticate, orderController.reserveCheckout);
+router.post('/checkout/release', authenticate, orderController.releaseCheckout);
 router.post('/razorpay/create-order', authenticate, orderController.createRazorpayOrder);
 router.post('/razorpay/verify', authenticate, orderController.verifyRazorpayOrder);
 router.post('/', authenticate, orderController.createOrder);

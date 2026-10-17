@@ -3,11 +3,26 @@ const { ApiResponse } = require('../../utils/apiResponse');
 
 const getUserId = (req) => req.user?._id || req.user?.id;
 
+// Checkout Stock Reservation & Release (Restock)
+const reserveCheckout = async (req, res, next) => {
+  try {
+    const result = await OrderService.reserveCheckout(req.user, req.body);
+    return res.json(ApiResponse.success(result, 'Stock reserved for checkout'));
+  } catch (err) { next(err); }
+};
+
+const releaseCheckout = async (req, res, next) => {
+  try {
+    const result = await OrderService.releaseCheckout(req.user, req.body);
+    return res.json(ApiResponse.success(result, 'Reserved stock restored back to available'));
+  } catch (err) { next(err); }
+};
+
 // Customer Razorpay Flow
 const createRazorpayOrder = async (req, res, next) => {
   try {
     const result = await OrderService.createRazorpayOrder(req.user, req.body);
-    return res.json(ApiResponse.success(result, 'Razorpay order initialized'));
+    return res.json(ApiResponse.success(result, 'Razorpay order initialized and stock reserved'));
   } catch (err) { next(err); }
 };
 
@@ -101,6 +116,8 @@ const deleteOrder = async (req, res, next) => {
 };
 
 module.exports = {
+  reserveCheckout,
+  releaseCheckout,
   createRazorpayOrder,
   verifyRazorpayOrder,
   createOrder,
