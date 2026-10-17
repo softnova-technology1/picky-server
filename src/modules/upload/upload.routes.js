@@ -13,7 +13,7 @@ router.post('/', authenticate, requireRole('admin'), upload.single('image'), asy
     if (!req.file) {
       return res.status(400).json(ApiResponse.error('No image file provided', 400));
     }
-    const result = await uploadImage(req.file.buffer, 'picky/customization', req.file.mimetype);
+    const result = await uploadImage(req.file.buffer, 'customization', req.file.mimetype);
     return res.json(ApiResponse.success({ url: result.url }));
   } catch (err) {
     next(err);

@@ -1,7 +1,7 @@
 const AppError = require('../../utils/appError');
 const ProductRepo = require('./product.repository');
 const Inventory = require('../../models/inventory.model');
-const { uploadImage } = require('../../services/s3.service');
+const { uploadImage, deleteImage } = require('../../services/s3.service');
 const sharp = require('sharp');
 const paginate = require('../../utils/paginate');
 
@@ -51,6 +51,9 @@ const ProductService = {
     }
     if (query.subCategory) {
       filter.subCategory = { $regex: new RegExp(`^${query.subCategory}$`, 'i') };
+    }
+    if (query.tag) {
+      filter.tags = { $regex: new RegExp(`^${query.tag}$`, 'i') };
     }
     
     // Price filtering
@@ -194,6 +197,14 @@ const ProductService = {
       );
     }
 
+    // Clean up any images that were removed during this update from S3
+    const removedImages = (product.images || []).filter((oldImg) => !images.includes(oldImg));
+    if (removedImages.length > 0) {
+      for (const remImg of removedImages) {
+        deleteImage(remImg).catch(() => {});
+      }
+    }
+
     clearProductCache();
     return ProductRepo.update(id, updateData);
   },
@@ -201,6 +212,14 @@ const ProductService = {
   async delete(id) {
     const product = await ProductRepo.findById(id);
     if (!product) throw new AppError('Product not found', 404);
+
+    // Delete all associated images from S3
+    if (Array.isArray(product.images) && product.images.length > 0) {
+      for (const imgUrl of product.images) {
+        deleteImage(imgUrl).catch(() => {});
+      }
+    }
+
     await Inventory.deleteMany({ product: id });
     clearProductCache();
     return ProductRepo.delete(id);
