@@ -368,12 +368,14 @@ const OrderService = {
     courier,
     deliveryMode,
     sessionId,
+    isBuyNow = false,
+    fromCart = false,
   }) {
     const isGift = Boolean(giftWrap?.isGiftWrapped || giftWrap === true);
     const calculatedGiftWrapFee = isGift ? (Number(giftWrap?.fee !== undefined ? giftWrap.fee : giftWrapFee) || 0) : 0;
     const giftMessage = isGift ? (giftWrap?.message || '').trim() : '';
     let cart = await CartRepo.findByUser(user._id);
-    if ((!cart || cart.items.length === 0) && items && items.length > 0) {
+    if (!isBuyNow && (!cart || cart.items.length === 0) && items && items.length > 0) {
       const CartService = require('../cart/cart.service');
       await CartService.mergeGuestCart(user._id, items);
       cart = await CartRepo.findByUser(user._id);
@@ -637,37 +639,54 @@ const OrderService = {
       );
 
       // Step 5: Clear cart or remove purchased items (inside transaction for full rollback safety)
-      const orderedProductIds = (items && items.length > 0 ? items : cart.items)
+      const orderedProductIds = (items && items.length > 0 ? items : (cart?.items || []))
         .map((i) => (i.productId || i.product || i._id || i.id)?.toString())
         .filter(Boolean);
 
-      if (items && items.length > 0 && cart.items.length > items.length) {
-        await Cart.findOneAndUpdate(
-          { user: user._id },
-          { $pull: { items: { product: { $in: orderedProductIds } } } },
-          { session }
-        );
+      if (isBuyNow) {
+        if (fromCart) {
+          // Express checkout of a single item that was in the customer's cart
+          await Cart.findOneAndUpdate(
+            { user: user._id },
+            { $pull: { items: { product: { $in: orderedProductIds } } } },
+            { session }
+          );
+        }
+        // If !fromCart (direct Buy Now from Product Details page): DO NOT touch active/abandoned cart in DB!
       } else {
-        await Cart.findOneAndUpdate(
-          { user: user._id },
-          { items: [], coupon: null, couponDiscount: 0 },
-          { session }
-        );
+        // Full or partial cart checkout
+        if (items && items.length > 0 && cart && cart.items && cart.items.length > items.length) {
+          await Cart.findOneAndUpdate(
+            { user: user._id },
+            { $pull: { items: { product: { $in: orderedProductIds } } } },
+            { session }
+          );
+        } else {
+          await Cart.findOneAndUpdate(
+            { user: user._id },
+            { items: [], coupon: null, couponDiscount: 0 },
+            { session }
+          );
+        }
       }
 
       await session.commitTransaction();
       logger.info(`[ORDER] ✅ Order ${order.orderNumber} committed successfully`);
 
-      // Auto-sync with Abandoned Cart Recovery
-      try {
-        const CartService = require('../cart/cart.service');
-        await CartService.markCartRecovered(cart._id, {
-          orderNumber: order.orderNumber,
-          convertedItems: order.items,
-          wonBackAmount: order.total,
-        });
-      } catch (recErr) {
-        logger.warn(`[RECOVERY_SYNC] Failed auto-sync: ${recErr.message}`);
+      // Auto-sync with Abandoned Cart Recovery (ONLY for cart checkouts or single items from cart, NEVER direct Buy Now!)
+      if (!isBuyNow || fromCart) {
+        try {
+          if (cart?._id) {
+            const CartService = require('../cart/cart.service');
+            await CartService.markCartRecovered(cart._id, {
+              orderNumber: order.orderNumber,
+              convertedItems: order.items,
+              wonBackAmount: order.total,
+            });
+          }
+        } catch (recErr) {
+          logger.warn(`[RECOVERY_SYNC] Failed auto-sync: ${recErr.message}`);
+        }
       }
     } catch (err) {
       await session.abortTransaction();
@@ -709,6 +728,8 @@ const OrderService = {
     sessionId = null,
     deliveryMode = 'Standard Delivery',
     courier = null,
+    isBuyNow = false,
+    fromCart = false,
   }) {
     if (!items || items.length === 0) {
       throw new AppError('Order must contain at least one item', 400);
@@ -847,54 +868,65 @@ const OrderService = {
     // Increment user orderCount
     await User.findByIdAndUpdate(user._id, { $inc: { orderCount: 1 } });
 
-    // Clear cart or remove ordered items
+    // Clear cart or remove ordered items (ONLY for cart checkouts or single items from cart, NEVER direct Buy Now!)
     try {
-      const existingCart = await Cart.findOne({ user: user._id });
-      if (existingCart) {
-        const orderedProductIds = formattedItems
-          .map((i) => (i.product || i._id || i.id)?.toString())
-          .filter(Boolean);
+      if (!isBuyNow || fromCart) {
+        const existingCart = await Cart.findOne({ user: user._id });
+        if (existingCart) {
+          const orderedProductIds = formattedItems
+            .map((i) => (i.product || i._id || i.id)?.toString())
+            .filter(Boolean);
 
-        const purchasedPayload = formattedItems.map((i) => ({
-          product: i.product || i._id,
-          name: i.name,
-          price: i.price,
-          quantity: i.quantity || 1,
-          image: i.image,
-          orderNumber: order.orderNumber,
-          purchasedAt: new Date(),
-        }));
-
-        if (existingCart.items && existingCart.items.length > formattedItems.length) {
-          await Cart.findOneAndUpdate(
-            { user: user._id },
-            {
-              $pull: { items: { product: { $in: orderedProductIds } } },
-              $push: { purchasedItems: { $each: purchasedPayload } },
-            }
-          );
-        } else {
-          await Cart.findOneAndUpdate(
-            { user: user._id },
-            {
-              items: [],
-              coupon: null,
-              couponDiscount: 0,
-              $push: { purchasedItems: { $each: purchasedPayload } },
-            }
-          );
-        }
-
-        // Auto sync with Abandoned Cart Recovery (mark as recovered/partial)
-        try {
-          const CartService = require('../cart/cart.service');
-          await CartService.markCartRecovered(existingCart._id, {
+          const purchasedPayload = formattedItems.map((i) => ({
+            product: i.product || i._id,
+            name: i.name,
+            price: i.price,
+            quantity: i.quantity || 1,
+            image: i.image,
             orderNumber: order.orderNumber,
-            convertedItems: formattedItems,
-            wonBackAmount: finalTotal,
-          });
-        } catch (recErr) {
-          logger.warn(`[RECOVERY_SYNC] Failed auto-sync: ${recErr.message}`);
+            purchasedAt: new Date(),
+          }));
+
+          if (isBuyNow && fromCart) {
+            // Partial recovery of single item from cart
+            await Cart.findOneAndUpdate(
+              { user: user._id },
+              {
+                $pull: { items: { product: { $in: orderedProductIds } } },
+                $push: { purchasedItems: { $each: purchasedPayload } },
+              }
+            );
+          } else if (existingCart.items && existingCart.items.length > formattedItems.length) {
+            await Cart.findOneAndUpdate(
+              { user: user._id },
+              {
+                $pull: { items: { product: { $in: orderedProductIds } } },
+                $push: { purchasedItems: { $each: purchasedPayload } },
+              }
+            );
+          } else {
+            await Cart.findOneAndUpdate(
+              { user: user._id },
+              {
+                items: [],
+                coupon: null,
+                couponDiscount: 0,
+                $push: { purchasedItems: { $each: purchasedPayload } },
+              }
+            );
+          }
+
+          // Auto sync with Abandoned Cart Recovery (mark as recovered/partial)
+          try {
+            const CartService = require('../cart/cart.service');
+            await CartService.markCartRecovered(existingCart._id, {
+              orderNumber: order.orderNumber,
+              convertedItems: formattedItems,
+              wonBackAmount: finalTotal,
+            });
+          } catch (recErr) {
+            logger.warn(`[RECOVERY_SYNC] Failed auto-sync: ${recErr.message}`);
+          }
         }
       }
     } catch (_) {}
@@ -1114,6 +1146,24 @@ const OrderService = {
       }
     }
     return order;
+  },
+
+  async customerCancelOrder(orderId, userId, reason) {
+    if (!mongoose.isValidObjectId(orderId)) throw new AppError('Invalid order ID', 400);
+    const existing = await OrderRepo.findById(orderId);
+    if (!existing) throw new AppError('Order not found', 404);
+
+    if (existing.user.toString() !== userId.toString()) {
+      throw new AppError('You are not authorized to cancel this order', 403);
+    }
+
+    const cancellableStatuses = ['pending', 'confirmed'];
+    if (!cancellableStatuses.includes(existing.status)) {
+      throw new AppError(`Order cannot be cancelled because it is already '${existing.status}'.`, 400);
+    }
+
+    const cancelNote = reason ? `Customer Cancellation: ${reason}` : 'Cancelled by customer';
+    return await this.updateStatus(orderId, { status: 'cancelled', note: cancelNote });
   },
 
   async deleteOrder(orderId) {

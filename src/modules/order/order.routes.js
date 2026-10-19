@@ -27,6 +27,7 @@ router.get('/track/:orderNumber', orderController.trackOrderByNumber);
 router.get('/', authenticate, orderController.myOrders);
 router.get('/:id', authenticate, orderController.orderDetail);
 router.get('/:id/tracking', authenticate, orderController.getTracking);
+router.patch('/:id/cancel', authenticate, orderController.customerCancelOrder);
 
 // ─── Admin Order & Dispatch Management (Protected) ──────────────────────────
 router.get('/admin/list', authenticate, requireRole('admin'), orderController.adminListOrders);

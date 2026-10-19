@@ -79,6 +79,13 @@ const trackOrderByNumber = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+const customerCancelOrder = async (req, res, next) => {
+  try {
+    const order = await OrderService.customerCancelOrder(req.params.id, getUserId(req), req.body?.reason);
+    return res.json(ApiResponse.success(order, 'Order cancelled successfully'));
+  } catch (err) { next(err); }
+};
+
 // Admin Management
 const adminListOrders = async (req, res, next) => {
   try {
@@ -131,4 +138,5 @@ module.exports = {
   updateStatus,
   deleteOrder,
   trackOrderByNumber,
+  customerCancelOrder,
 };
