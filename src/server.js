@@ -34,8 +34,12 @@ const start = async () => {
     logger.info(`🏥 Health: http://localhost:${PORT}/health`);
 
     // 5. Initialize Automated Background Cron Jobs
-    const { initCronJobs } = require('./jobs');
-    initCronJobs();
+    try {
+      const { initCronJobs } = require('./jobs');
+      initCronJobs();
+    } catch (cronErr) {
+      logger.error(`❌ Cron jobs failed to initialize: ${cronErr.message}`);
+    }
   });
 
   // Graceful shutdown on cloud deployment (Render, AWS, Docker)

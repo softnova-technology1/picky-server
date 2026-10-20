@@ -2,13 +2,26 @@ const { z } = require('zod');
 
 const parseTags = (val) => {
   if (!val) return [];
-  if (Array.isArray(val)) return val.map(String).map((s) => s.trim()).filter(Boolean);
+  const clean = (arr) => {
+    const seen = new Set();
+    const result = [];
+    for (const item of arr) {
+      const s = String(item).trim();
+      const lower = s.toLowerCase();
+      if (s && !seen.has(lower)) {
+        seen.add(lower);
+        result.push(s);
+      }
+    }
+    return result;
+  };
+  if (Array.isArray(val)) return clean(val);
   if (typeof val === 'string') {
     try {
       const parsed = JSON.parse(val);
-      if (Array.isArray(parsed)) return parsed.map(String).map((s) => s.trim()).filter(Boolean);
+      if (Array.isArray(parsed)) return clean(parsed);
     } catch (_) {}
-    return val.split(',').map((t) => t.trim()).filter(Boolean);
+    return clean(val.split(','));
   }
   return [];
 };
@@ -78,8 +91,8 @@ const createProductSchema = z.preprocess(
       z.boolean().optional()
     ),
     isActive: z.preprocess(
-      (val) => (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val)),
-      z.boolean().optional()
+      (val) => (val === undefined || val === '' ? true : (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val))),
+      z.boolean().default(true)
     ),
   })
 );
@@ -149,7 +162,7 @@ const updateProductSchema = z.preprocess(
       z.boolean().optional()
     ),
     isActive: z.preprocess(
-      (val) => (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val)),
+      (val) => (val === undefined ? undefined : (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val))),
       z.boolean().optional()
     ),
   })
