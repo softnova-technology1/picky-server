@@ -41,6 +41,11 @@ const contactInquirySchema = new mongoose.Schema(
       enum: ['unread', 'read', 'replied'],
       default: 'unread',
     },
+    source: {
+      type: String,
+      enum: ['contact_page', 'homepage', 'footer', 'general'],
+      default: 'contact_page',
+    },
   },
   {
     timestamps: true,
@@ -49,5 +54,6 @@ const contactInquirySchema = new mongoose.Schema(
 
 contactInquirySchema.index({ createdAt: -1 });
 contactInquirySchema.index({ isRead: 1 });
+contactInquirySchema.index({ source: 1 });
 
 module.exports = mongoose.model('ContactInquiry', contactInquirySchema);

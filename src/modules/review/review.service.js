@@ -98,6 +98,12 @@ const ReviewService = {
       isVerifiedBuyer: isVerified || true,
     });
 
+    // Trigger admin review notification
+    try {
+      const AdminNotificationService = require('../../services/adminNotification.service');
+      AdminNotificationService.notifyNewReview(newReview, productDoc);
+    } catch {}
+
     return newReview;
   },
 

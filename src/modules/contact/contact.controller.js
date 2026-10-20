@@ -9,11 +9,11 @@ const logger = require('../../utils/logger');
 const ContactController = {
   /**
    * Submit Contact Form (Public Endpoint)
-   * Email is optional, file upload is supported.
+   * Supports source: 'contact_page' | 'homepage' | 'footer'
    */
   async submit(req, res, next) {
     try {
-      const { fullName, email, phone, message } = req.body;
+      const { fullName, email, phone, message, source } = req.body;
 
       if (!fullName || !fullName.trim()) {
         return next(new AppError('Full name is required', 400));
@@ -31,7 +31,6 @@ const ContactController = {
       };
 
       if (req.file) {
-        // Construct accessible static URL
         const host = req.get('host');
         const protocol = req.protocol || 'http';
         const fileUrl = `${protocol}://${host}/uploads/contact/${req.file.filename}`;
@@ -45,6 +44,10 @@ const ContactController = {
         };
       }
 
+      const cleanSource = ['contact_page', 'homepage', 'footer', 'general'].includes(source)
+        ? source
+        : 'contact_page';
+
       // 1. Create Contact Inquiry in MongoDB
       const inquiry = await ContactInquiry.create({
         fullName: fullName.trim(),
@@ -54,11 +57,13 @@ const ContactController = {
         file: fileData,
         isRead: false,
         status: 'unread',
+        source: cleanSource,
       });
 
       // 2. Create In-App Admin Notification in MongoDB
       const snippet = message.trim().length > 90 ? `${message.trim().slice(0, 90)}...` : message.trim();
-      const notifTitle = `New Support Inquiry from ${fullName.trim()}`;
+      const sourceLabel = cleanSource === 'homepage' || cleanSource === 'footer' ? 'Homepage' : 'Contact Page';
+      const notifTitle = `New Inquiry from ${fullName.trim()} (${sourceLabel})`;
       const notifMessage = fileData.url
         ? `${snippet} (📎 Attachment: ${fileData.originalName})`
         : snippet;
@@ -67,16 +72,18 @@ const ContactController = {
         type: 'contact',
         category: 'Contact & Support',
         title: notifTitle,
+        subtitle: `${sourceLabel} Submission`,
         message: notifMessage,
         unread: true,
         starred: false,
-        link: '/softpicky-sn2026/settings?tab=notifications',
-        linkText: 'View Inquiry',
+        link: '/softpicky-sn2026/inquiries',
+        linkText: 'View Inquiries',
         metadata: {
           inquiryId: inquiry._id,
           fullName: inquiry.fullName,
           email: inquiry.email,
           phone: inquiry.phone,
+          source: cleanSource,
           hasAttachment: Boolean(fileData.url),
           fileUrl: fileData.url,
           fileName: fileData.originalName,
@@ -85,7 +92,7 @@ const ContactController = {
         },
       });
 
-      logger.info(`📩 New Contact Inquiry received: ID=${inquiry._id}, Name="${fullName}"`);
+      logger.info(`📩 New Contact Inquiry received: ID=${inquiry._id}, Source=${cleanSource}, Name="${fullName}"`);
 
       return sendSuccess(
         res,
@@ -103,33 +110,70 @@ const ContactController = {
   },
 
   /**
-   * List all contact inquiries for Admin
+   * List all contact inquiries for Admin with source & search filtering
    */
   async list(req, res, next) {
     try {
       const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-      const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
       const skip = (page - 1) * limit;
 
       const filter = {};
-      if (req.query.status) {
-        filter.status = req.query.status;
-      }
-      if (req.query.search) {
-        const regex = new RegExp(req.query.search, 'i');
-        filter.$or = [{ fullName: regex }, { email: regex }, { message: regex }];
+
+      // Source filter: 'all' | 'contact_page' | 'homepage'
+      if (req.query.source && req.query.source !== 'all') {
+        if (req.query.source === 'homepage') {
+          filter.source = { $in: ['homepage', 'footer'] };
+        } else if (req.query.source === 'contact_page') {
+          // If inquiry has no source field, treat as legacy contact_page
+          filter.$or = [{ source: 'contact_page' }, { source: { $exists: false } }, { source: null }];
+        } else {
+          filter.source = req.query.source;
+        }
       }
 
-      const [inquiries, total] = await Promise.all([
+      // Status / Read filter: 'all' | 'unread' | 'read'
+      if (req.query.status) {
+        if (req.query.status === 'unread') {
+          filter.isRead = false;
+        } else if (req.query.status === 'read') {
+          filter.isRead = true;
+        } else if (['unread', 'read', 'replied'].includes(req.query.status)) {
+          filter.status = req.query.status;
+        }
+      }
+
+      // Search term
+      if (req.query.search && req.query.search.trim()) {
+        const regex = new RegExp(req.query.search.trim(), 'i');
+        const searchConditions = [{ fullName: regex }, { email: regex }, { phone: regex }, { message: regex }];
+        if (filter.$or) {
+          filter.$and = [{ $or: filter.$or }, { $or: searchConditions }];
+          delete filter.$or;
+        } else {
+          filter.$or = searchConditions;
+        }
+      }
+
+      const [inquiries, total, unreadCount, contactCount, homepageCount] = await Promise.all([
         ContactInquiry.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
         ContactInquiry.countDocuments(filter),
+        ContactInquiry.countDocuments({ isRead: false }),
+        ContactInquiry.countDocuments({
+          $or: [{ source: 'contact_page' }, { source: { $exists: false } }, { source: null }],
+        }),
+        ContactInquiry.countDocuments({ source: { $in: ['homepage', 'footer'] } }),
       ]);
-
-      const unreadCount = await ContactInquiry.countDocuments({ isRead: false });
 
       return sendSuccess(
         res,
-        { inquiries, unreadCount },
+        {
+          inquiries,
+          unreadCount,
+          contactCount,
+          homepageCount,
+          totalInquiries: await ContactInquiry.countDocuments(),
+        },
         200,
         { page, limit, total, totalPages: Math.ceil(total / limit) }
       );
@@ -154,26 +198,69 @@ const ContactController = {
   },
 
   /**
-   * Mark inquiry as read
+   * Mark inquiry as read or toggle status
    */
   async markAsRead(req, res, next) {
     try {
+      const isRead = req.body.isRead !== undefined ? Boolean(req.body.isRead) : true;
+      const status = isRead ? 'read' : 'unread';
+
       const inquiry = await ContactInquiry.findByIdAndUpdate(
         req.params.id,
-        { isRead: true, status: 'read' },
+        { isRead, status },
         { new: true }
       );
       if (!inquiry) {
         return next(new AppError('Inquiry not found', 404));
       }
 
-      // Also mark corresponding notification as read if exists
+      // Update corresponding notification
       await Notification.updateMany(
         { 'metadata.inquiryId': req.params.id },
-        { unread: false }
+        { unread: !isRead }
       );
 
-      return sendSuccess(res, inquiry, 200, null, 'Inquiry marked as read');
+      return sendSuccess(res, inquiry, 200, null, `Inquiry marked as ${status}`);
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  /**
+   * Bulk Mark Inquiries as Read or Unread
+   */
+  async bulkRead(req, res, next) {
+    try {
+      const { ids, isRead = true } = req.body;
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return next(new AppError('No inquiry IDs provided', 400));
+      }
+
+      const status = isRead ? 'read' : 'unread';
+      await ContactInquiry.updateMany(
+        { _id: { $in: ids } },
+        { isRead: Boolean(isRead), status }
+      );
+
+      await Notification.updateMany(
+        { 'metadata.inquiryId': { $in: ids } },
+        { unread: !isRead }
+      );
+
+      return sendSuccess(res, { updatedCount: ids.length }, 200, null, `Selected inquiries marked as ${status}`);
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  /**
+   * Mark all inquiries as read
+   */
+  async markAllRead(req, res, next) {
+    try {
+      await ContactInquiry.updateMany({ isRead: false }, { isRead: true, status: 'read' });
+      await Notification.updateMany({ type: 'contact', unread: true }, { unread: false });
+      return sendSuccess(res, null, 200, null, 'All inquiries marked as read');
     } catch (err) {
       next(err);
     }
@@ -223,6 +310,35 @@ const ContactController = {
       await Notification.deleteMany({ 'metadata.inquiryId': req.params.id });
 
       return sendSuccess(res, null, 200, null, 'Inquiry deleted successfully');
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  /**
+   * Bulk Delete Inquiries
+   */
+  async bulkDelete(req, res, next) {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return next(new AppError('No inquiry IDs provided', 400));
+      }
+
+      const inquiries = await ContactInquiry.find({ _id: { $in: ids } });
+      for (const inq of inquiries) {
+        if (inq.file && inq.file.filename) {
+          const filePath = path.join(__dirname, '../../../uploads/contact', inq.file.filename);
+          if (fs.existsSync(filePath)) {
+            fs.unlink(filePath, () => {});
+          }
+        }
+      }
+
+      await ContactInquiry.deleteMany({ _id: { $in: ids } });
+      await Notification.deleteMany({ 'metadata.inquiryId': { $in: ids } });
+
+      return sendSuccess(res, { deletedCount: inquiries.length }, 200, null, 'Selected inquiries deleted successfully');
     } catch (err) {
       next(err);
     }

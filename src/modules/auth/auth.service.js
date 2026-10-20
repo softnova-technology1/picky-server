@@ -53,7 +53,13 @@ const AuthService = {
     await redis.del(attemptKey);
 
     let user = await User.findOne({ phone });
-    if (!user) user = await User.create({ phone });
+    if (!user) {
+      user = await User.create({ phone });
+      try {
+        const AdminNotificationService = require('../../services/adminNotification.service');
+        AdminNotificationService.notifyNewCustomer(user);
+      } catch {}
+    }
 
     const tokens = signTokens(user._id.toString());
     await redis.set(

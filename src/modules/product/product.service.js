@@ -31,15 +31,37 @@ const ProductService = {
     const filter = {};
     if (query.includeInactive !== 'true' && query.includeInactive !== true) {
       filter.isActive = true;
+      // Hide scheduled products until their scheduledAt has passed
+      filter.$and = filter.$and || [];
+      filter.$and.push({
+        $or: [
+          { scheduledAt: null },
+          { scheduledAt: { $exists: false } },
+          { scheduledAt: { $lte: new Date() } },
+        ],
+      });
     }
+
+    if (query.scheduled === 'true' || query.tab === 'Scheduled') {
+      filter.scheduledAt = { $gt: new Date() };
+    }
+
     if (query.search || query.q) {
       const q = (query.search || query.q).trim();
-      filter.$or = [
-        { name: { $regex: q, $options: 'i' } },
-        { sku: { $regex: q, $options: 'i' } },
-        { subCategory: { $regex: q, $options: 'i' } },
-      ];
+      const searchCondition = {
+        $or: [
+          { name: { $regex: q, $options: 'i' } },
+          { sku: { $regex: q, $options: 'i' } },
+          { subCategory: { $regex: q, $options: 'i' } },
+        ],
+      };
+      if (filter.$and) {
+        filter.$and.push(searchCondition);
+      } else {
+        filter.$or = searchCondition.$or;
+      }
     }
+
     if (query.category) {
       if (query.category.match(/^[0-9a-fA-F]{24}$/)) {
         filter.category = query.category;
@@ -58,9 +80,9 @@ const ProductService = {
     
     // Price filtering
     if (query.minPrice !== undefined || query.maxPrice !== undefined) {
-      filter.basePrice = {};
-      if (query.minPrice !== undefined) filter.basePrice.$gte = Number(query.minPrice);
-      if (query.maxPrice !== undefined) filter.basePrice.$lte = Number(query.maxPrice);
+      filter.price = {};
+      if (query.minPrice !== undefined) filter.price.$gte = Number(query.minPrice);
+      if (query.maxPrice !== undefined) filter.price.$lte = Number(query.maxPrice);
     }
 
     // Featured & Tag filtering
@@ -117,7 +139,7 @@ const ProductService = {
         if (pos === 'file') {
           if (files && files[fileIndex]) {
             const file = files[fileIndex];
-            const buf = await sharp(file.buffer).resize(800, 800, { fit: 'inside' }).webp({ quality: 80 }).toBuffer();
+            const buf = await sharp(file.buffer).resize(1200, 1200, { fit: 'inside', withoutEnlargement: true }).webp({ quality: 85 }).toBuffer();
             const { url } = await uploadImage(buf, 'picky/products');
             images.push(url);
             fileIndex++;
@@ -129,7 +151,7 @@ const ProductService = {
     } else if (files && files.length > 0) {
       // Fallback
       for (const file of files) {
-        const buf = await sharp(file.buffer).resize(800, 800, { fit: 'inside' }).webp({ quality: 80 }).toBuffer();
+        const buf = await sharp(file.buffer).resize(1200, 1200, { fit: 'inside', withoutEnlargement: true }).webp({ quality: 85 }).toBuffer();
         const { url } = await uploadImage(buf, 'picky/products');
         images.push(url);
       }
@@ -144,7 +166,26 @@ const ProductService = {
 
     const sku = (body.sku || '').trim().toUpperCase() || `PK-${Date.now().toString(36).toUpperCase()}`;
 
-    const product = await ProductRepo.create({ ...productData, sku, slug, images, stock });
+    // Scheduling calculation
+    let scheduledAt = null;
+    let isScheduled = false;
+    if (body.scheduledAt) {
+      const d = new Date(body.scheduledAt);
+      if (!isNaN(d.getTime())) {
+        scheduledAt = d;
+        isScheduled = d > new Date();
+      }
+    }
+
+    const product = await ProductRepo.create({
+      ...productData,
+      sku,
+      slug,
+      images,
+      stock,
+      scheduledAt,
+      isScheduled,
+    });
 
     // Automatically initialize inventory record
     await Inventory.create({
@@ -171,7 +212,7 @@ const ProductService = {
         if (pos === 'file') {
           if (files && files[fileIndex]) {
             const file = files[fileIndex];
-            const buf = await sharp(file.buffer).resize(800, 800, { fit: 'inside' }).webp({ quality: 80 }).toBuffer();
+            const buf = await sharp(file.buffer).resize(1200, 1200, { fit: 'inside', withoutEnlargement: true }).webp({ quality: 85 }).toBuffer();
             const { url } = await uploadImage(buf, 'picky/products');
             images.push(url);
             fileIndex++;
@@ -190,11 +231,43 @@ const ProductService = {
 
     const { stock, imagePositions: _ip, ...productData } = body;
     const updateData = { ...productData, images };
+
+    // Offer Label & Tag synchronization
+    if (body.offerLabel !== undefined) {
+      const cleanLabel = String(body.offerLabel || '').trim();
+      updateData.offerLabel = cleanLabel;
+      if (cleanLabel) {
+        // Replace existing tag with assigned offer label
+        updateData.tags = [cleanLabel];
+      } else {
+        // If label is empty, remove/clear tag completely
+        updateData.tags = [];
+      }
+    }
+
+    if (body.isDiscountActive !== undefined) {
+      updateData.isDiscountActive = Boolean(body.isDiscountActive === true || body.isDiscountActive === 'true');
+    }
+
     if (stock !== undefined && !isNaN(Number(stock))) {
       updateData.stock = Math.max(0, Number(stock));
     }
     if (body.name && body.name !== product.name) {
       updateData.slug = slugify(body.name);
+    }
+
+    // Schedule handling on update
+    if (body.scheduledAt !== undefined) {
+      if (body.scheduledAt === null || body.scheduledAt === '') {
+        updateData.scheduledAt = null;
+        updateData.isScheduled = false;
+      } else {
+        const d = new Date(body.scheduledAt);
+        if (!isNaN(d.getTime())) {
+          updateData.scheduledAt = d;
+          updateData.isScheduled = d > new Date();
+        }
+      }
     }
 
     if (stock !== undefined && !isNaN(Number(stock))) {
