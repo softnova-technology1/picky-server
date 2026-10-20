@@ -10,6 +10,7 @@ const characteristicFieldSchema = z.object({
 const createCategorySchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().optional(),
+  image: z.string().optional().nullable(),
   sortOrder: z.coerce.number().int().optional(),
   characteristics: z.array(characteristicFieldSchema).optional(),
   isActive: z.preprocess(

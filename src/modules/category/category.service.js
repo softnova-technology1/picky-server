@@ -43,10 +43,10 @@ const CategoryService = {
     const existing = await CategoryRepo.findBySlug(slug);
     if (existing) throw new AppError('Category with this name already exists', 400);
 
-    let image = null;
+    let image = body.image || null;
     if (file) {
       const buf = await sharp(file.buffer).resize(400, 400, { fit: 'cover' }).webp({ quality: 80 }).toBuffer();
-      const result = await uploadImage(buf, 'picky/categories');
+      const result = await uploadImage(buf, 'category');
       image = result.url;
     }
     clearCategoryCache();
@@ -56,10 +56,10 @@ const CategoryService = {
   async update(id, body, file) {
     const category = await CategoryRepo.findById(id);
     if (!category) throw new AppError('Category not found', 404);
-    let image = category.image;
+    let image = body.image !== undefined ? body.image : category.image;
     if (file) {
       const buf = await sharp(file.buffer).resize(400, 400, { fit: 'cover' }).webp({ quality: 80 }).toBuffer();
-      const result = await uploadImage(buf, 'categories');
+      const result = await uploadImage(buf, 'category');
       if (category.image && category.image !== result.url) {
         deleteImage(category.image).catch(() => {});
       }

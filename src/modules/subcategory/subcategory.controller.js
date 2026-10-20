@@ -1,4 +1,5 @@
 const SubCategory = require('../../models/subcategory.model');
+const Product = require('../../models/product.model');
 const { ApiResponse } = require('../../utils/apiResponse');
 const { uploadImage, deleteImage } = require('../../services/s3.service');
 const sharp = require('sharp');
@@ -15,7 +16,7 @@ const processSubcategoryImage = async (imageStr) => {
       .resize(320, 320, { fit: 'inside', withoutEnlargement: true })
       .webp({ quality: 80 })
       .toBuffer();
-    const result = await uploadImage(resized, 'subcategories');
+    const result = await uploadImage(resized, 'sub-category');
     return result.url;
   } catch (_) {
     return imageStr;
@@ -44,8 +45,31 @@ const list = async (req, res, next) => {
       .populate('categoryId', 'name slug')
       .lean();
 
-    subcategoryCache.set(cacheKey, { time: Date.now(), data: subcategories });
-    return res.json(ApiResponse.success(subcategories));
+    // Query active products to attach accurate itemCount & productCount
+    const products = await Product.find({}, 'subCategory category').lean();
+
+    const withCount = subcategories.map((sub) => {
+      const sId = String(sub._id);
+      const sSlug = String(sub.slug || '').trim().toLowerCase();
+      const sName = String(sub.name || '').trim().toLowerCase();
+      const cId = (typeof sub.categoryId === 'object' ? sub.categoryId?._id : sub.categoryId)?.toString();
+
+      const count = products.filter((p) => {
+        if (!p.subCategory) return false;
+        if (cId && p.category && p.category.toString() !== cId) return false;
+        const pSub = String(p.subCategory).trim().toLowerCase();
+        return pSub === sId || pSub === sSlug || pSub === sName;
+      }).length;
+
+      return {
+        ...sub,
+        itemCount: count,
+        productCount: count,
+      };
+    });
+
+    subcategoryCache.set(cacheKey, { time: Date.now(), data: withCount });
+    return res.json(ApiResponse.success(withCount));
   } catch (err) { next(err); }
 };
 
@@ -95,4 +119,24 @@ const remove = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { list, create, update, remove };
+const bulkRemove = async (req, res, next) => {
+  try {
+    clearSubCache();
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json(ApiResponse.error('No subcategory IDs provided', 400));
+    }
+
+    const items = await SubCategory.find({ _id: { $in: ids } });
+    for (const item of items) {
+      if (item.image) {
+        deleteImage(item.image).catch(() => {});
+      }
+    }
+
+    const result = await SubCategory.deleteMany({ _id: { $in: ids } });
+    return res.json(ApiResponse.success(result, `${result.deletedCount || ids.length} sub-categories deleted`));
+  } catch (err) { next(err); }
+};
+
+module.exports = { list, create, update, remove, bulkRemove };
