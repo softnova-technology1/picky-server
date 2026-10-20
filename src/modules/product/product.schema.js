@@ -1,6 +1,7 @@
 const { z } = require('zod');
 
 const parseTags = (val) => {
+  if (val === undefined) return undefined;
   if (!val) return [];
   const clean = (arr) => {
     const seen = new Set();
