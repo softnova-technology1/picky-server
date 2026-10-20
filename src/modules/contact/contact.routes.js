@@ -58,8 +58,11 @@ const upload = multer({
 // ── Public Endpoint: Submit Contact Message & File
 router.post('/', upload.single('file'), ContactController.submit);
 
-// ── Admin Endpoints
+// ── Admin Endpoints (Batch operations placed before /:id routes)
 router.get('/', ContactController.list);
+router.post('/bulk-delete', ContactController.bulkDelete);
+router.patch('/bulk-read', ContactController.bulkRead);
+router.patch('/mark-all-read', ContactController.markAllRead);
 router.get('/:id', ContactController.getById);
 router.patch('/:id/read', ContactController.markAsRead);
 router.get('/download/:id', ContactController.downloadFile);

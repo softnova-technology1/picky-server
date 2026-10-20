@@ -29,7 +29,7 @@ const NotificationController = {
             message: hasAtt ? `${snippet} (📎 Attachment: ${inq.file?.originalName || 'file'})` : snippet,
             unread: !inq.isRead,
             starred: false,
-            link: '/softpicky-sn2026/settings?tab=notifications',
+            link: '/softpicky-sn2026/notifications',
             linkText: 'View Inquiry',
             metadata: {
               inquiryId: inq._id,
@@ -196,19 +196,30 @@ const NotificationController = {
    */
   async list(req, res, next) {
     try {
-      // Ensure all real database entities have authentic notifications
-      await NotificationController.syncWithDatabase();
-
       const page = Math.max(1, parseInt(req.query.page, 10) || 1);
       const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
       const skip = (page - 1) * limit;
 
       const filter = {};
       if (req.query.type && req.query.type !== 'all') {
-        filter.type = req.query.type;
+        if (req.query.type === 'customer') {
+          filter.$or = [{ type: 'customer' }, { type: 'contact' }];
+        } else {
+          filter.type = req.query.type;
+        }
       }
       if (req.query.unread === 'true') {
         filter.unread = true;
+      }
+      if (req.query.search && req.query.search.trim()) {
+        const regex = new RegExp(req.query.search.trim(), 'i');
+        filter.$or = [
+          { title: regex },
+          { subtitle: regex },
+          { message: regex },
+          { 'metadata.orderNumber': regex },
+          { 'metadata.customerName': regex },
+        ];
       }
 
       const [notifications, total, unreadCount] = await Promise.all([
@@ -250,6 +261,36 @@ const NotificationController = {
   /**
    * Mark all notifications as read
    */
+  /**
+   * Mark selected notifications as read
+   */
+  async bulkRead(req, res, next) {
+    try {
+      const { ids } = req.body;
+      if (Array.isArray(ids) && ids.length > 0) {
+        await Notification.updateMany({ _id: { $in: ids } }, { unread: false });
+      }
+      return sendSuccess(res, null, 200, null, 'Selected notifications marked as read');
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  /**
+   * Bulk delete notifications
+   */
+  async bulkDelete(req, res, next) {
+    try {
+      const { ids } = req.body;
+      if (Array.isArray(ids) && ids.length > 0) {
+        await Notification.deleteMany({ _id: { $in: ids } });
+      }
+      return sendSuccess(res, null, 200, null, 'Selected notifications deleted');
+    } catch (err) {
+      next(err);
+    }
+  },
+
   async markAllRead(req, res, next) {
     try {
       await Notification.updateMany({ unread: true }, { unread: false });

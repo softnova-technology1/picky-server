@@ -94,6 +94,14 @@ const createProductSchema = z.preprocess(
       (val) => (val === undefined || val === '' ? true : (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val))),
       z.boolean().default(true)
     ),
+    scheduledAt: z.preprocess(
+      (val) => (val === '' || val === undefined || val === null ? null : new Date(val)),
+      z.date().optional().nullable()
+    ),
+    isScheduled: z.preprocess(
+      (val) => (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val)),
+      z.boolean().optional()
+    ),
   })
 );
 
@@ -165,6 +173,14 @@ const updateProductSchema = z.preprocess(
       (val) => (val === undefined ? undefined : (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val))),
       z.boolean().optional()
     ),
+    scheduledAt: z.preprocess(
+      (val) => (val === '' || val === undefined || val === null ? null : new Date(val)),
+      z.date().optional().nullable()
+    ),
+    isScheduled: z.preprocess(
+      (val) => (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val)),
+      z.boolean().optional()
+    ),
   })
 );
 
@@ -177,4 +193,3 @@ const listProductsSchema = z.object({
 }).strict().optional();
 
 module.exports = { createProductSchema, updateProductSchema, listProductsSchema };
-

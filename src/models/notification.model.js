@@ -4,7 +4,7 @@ const notificationSchema = new mongoose.Schema(
   {
     type: {
       type: String,
-      enum: ['contact', 'order', 'inventory', 'customer', 'coupon', 'product', 'system'],
+      enum: ['contact', 'order', 'inventory', 'customer', 'coupon', 'product', 'system', 'payment'],
       default: 'contact',
     },
     category: {
@@ -14,6 +14,10 @@ const notificationSchema = new mongoose.Schema(
     title: {
       type: String,
       required: [true, 'Notification title is required'],
+    },
+    subtitle: {
+      type: String,
+      default: '',
       trim: true,
     },
     message: {
@@ -31,7 +35,7 @@ const notificationSchema = new mongoose.Schema(
     },
     link: {
       type: String,
-      default: '/softpicky-sn2026/settings?tab=notifications',
+      default: '/softpicky-sn2026/notifications',
     },
     linkText: {
       type: String,

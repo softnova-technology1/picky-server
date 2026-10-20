@@ -42,7 +42,8 @@ const triggerOrderNotification = async (order, user, shippingAddress) => {
       entityKey: `order-${order._id}`,
       type: 'order',
       category: 'Orders',
-      title: `New Order #${order.orderNumber} received${giftTitleTag}`,
+      title: `New order received${giftTitleTag}`,
+      subtitle: `Order #${order.orderNumber} · ${totalAmt}`,
       message: `${customerName} placed order for ${totalAmt} (${itemsCount} item${itemsCount > 1 ? 's' : ''}) with ${order.paymentMethod || 'Online'} Payment.${giftMsgText}`,
       unread: true,
       starred: false,
@@ -1130,6 +1131,13 @@ const OrderService = {
           );
         }
       }
+    }
+
+    if (status === 'cancelled' && existing.status !== 'cancelled') {
+      try {
+        const AdminNotificationService = require('../../services/adminNotification.service');
+        AdminNotificationService.notifyOrderCancelled(existing, null, note);
+      } catch {}
     }
 
     const order = await OrderRepo.updateStatus(orderId, status, note, { courier, courierUrl, trackingId });

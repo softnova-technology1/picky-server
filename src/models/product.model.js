@@ -25,9 +25,11 @@ const productSchema = new mongoose.Schema(
       default: { type: String, trim: true },
       colors: [mongoose.Schema.Types.Mixed],
     },
-    tags: [{ type: String, lowercase: true, trim: true }],
+    tags: [{ type: String, trim: true }],
     isActive: { type: Boolean, default: true },
     isFeatured: { type: Boolean, default: false },
+    scheduledAt: { type: Date, default: null },
+    isScheduled: { type: Boolean, default: false },
     sortOrder: { type: Number, default: 0 },
   },
   { timestamps: true }
@@ -37,6 +39,7 @@ productSchema.index({ category: 1 });
 productSchema.index({ subCategory: 1 });
 productSchema.index({ sku: 1 }, { sparse: true });
 productSchema.index({ isActive: 1 });
+productSchema.index({ scheduledAt: 1 });
 productSchema.index({ name: 'text', tags: 'text', description: 'text', shortDescription: 'text' });
 
 module.exports = mongoose.model('Product', productSchema);
