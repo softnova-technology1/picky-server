@@ -231,6 +231,24 @@ const ProductService = {
 
     const { stock, imagePositions: _ip, ...productData } = body;
     const updateData = { ...productData, images };
+
+    // Offer Label & Tag synchronization
+    if (body.offerLabel !== undefined) {
+      const cleanLabel = String(body.offerLabel || '').trim();
+      updateData.offerLabel = cleanLabel;
+      if (cleanLabel) {
+        // Replace existing tag with assigned offer label
+        updateData.tags = [cleanLabel];
+      } else {
+        // If label is empty, remove/clear tag completely
+        updateData.tags = [];
+      }
+    }
+
+    if (body.isDiscountActive !== undefined) {
+      updateData.isDiscountActive = Boolean(body.isDiscountActive === true || body.isDiscountActive === 'true');
+    }
+
     if (stock !== undefined && !isNaN(Number(stock))) {
       updateData.stock = Math.max(0, Number(stock));
     }

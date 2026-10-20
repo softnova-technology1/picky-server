@@ -82,6 +82,9 @@ const createProductSchema = z.preprocess(
       colors: z.array(z.any()).optional(),
     }).optional()),
     tags: z.preprocess(parseTags, z.array(z.string()).optional()),
+    offerLabel: z.preprocess((val) => (val === undefined || val === null ? '' : String(val).trim()), z.string().optional()),
+    offerStartDate: z.preprocess((val) => (!val ? null : new Date(val)), z.date().optional().nullable()),
+    offerEndDate: z.preprocess((val) => (!val ? null : new Date(val)), z.date().optional().nullable()),
     imagePositions: z.preprocess((val) => {
       if (!val) return [];
       return Array.isArray(val) ? val : [val];
@@ -89,6 +92,10 @@ const createProductSchema = z.preprocess(
     isFeatured: z.preprocess(
       (val) => (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val)),
       z.boolean().optional()
+    ),
+    isDiscountActive: z.preprocess(
+      (val) => (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val)),
+      z.boolean().default(false)
     ),
     isActive: z.preprocess(
       (val) => (val === undefined || val === '' ? true : (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val))),
@@ -161,12 +168,19 @@ const updateProductSchema = z.preprocess(
       colors: z.array(z.any()).optional(),
     }).optional()),
     tags: z.preprocess(parseTags, z.array(z.string()).optional()),
+    offerLabel: z.preprocess((val) => (val === undefined || val === null ? '' : String(val).trim()), z.string().optional()),
+    offerStartDate: z.preprocess((val) => (!val ? null : new Date(val)), z.date().optional().nullable()),
+    offerEndDate: z.preprocess((val) => (!val ? null : new Date(val)), z.date().optional().nullable()),
     imagePositions: z.preprocess((val) => {
       if (!val) return [];
       return Array.isArray(val) ? val : [val];
     }, z.array(z.string()).optional()),
     isFeatured: z.preprocess(
       (val) => (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val)),
+      z.boolean().optional()
+    ),
+    isDiscountActive: z.preprocess(
+      (val) => (val === undefined ? undefined : (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val))),
       z.boolean().optional()
     ),
     isActive: z.preprocess(
