@@ -182,11 +182,19 @@ const CartService = {
     return CartRepo.save(cart);
   },
 
-  // Admin: Get real carts with items for Abandoned Carts Recovery
+  // Admin: Get real carts with items for Abandoned Carts Recovery (including recovered carts)
   async getAbandonedCarts() {
-    const carts = await Cart.find({ 'items.0': { $exists: true } })
+    const carts = await Cart.find({
+      $or: [
+        { 'items.0': { $exists: true } },
+        { status: { $in: ['recovered', 'partial_recovery'] } },
+        { recoveredAmount: { $gt: 0 } },
+        { 'purchasedItems.0': { $exists: true } },
+      ],
+    })
       .populate('user', 'name phone email addresses defaultAddress city')
       .populate('items.product', 'name images price discountPrice sku subCategory')
+      .populate('purchasedItems.product', 'name images price discountPrice sku subCategory')
       .sort({ updatedAt: -1 })
       .lean();
 
@@ -212,18 +220,23 @@ const CartService = {
         ? addrParts.join(', ')
         : (city ? `${city}, ${state}` : 'Address not specified');
 
+      // Use active items if present, or fallback to purchasedItems if cart items were cleared upon conversion
+      const rawItemList = (Array.isArray(c.items) && c.items.length > 0)
+        ? c.items
+        : (Array.isArray(c.purchasedItems) && c.purchasedItems.length > 0 ? c.purchasedItems : []);
+
       // Consolidate duplicate products if any exist
       const consolidatedMap = new Map();
-      for (const i of c.items) {
+      for (const i of rawItemList) {
         const pKey = (i.product?._id || i.product || i.name).toString();
         if (consolidatedMap.has(pKey)) {
           const prev = consolidatedMap.get(pKey);
           prev.quantity += (i.quantity || 1);
         } else {
           consolidatedMap.set(pKey, {
-            sku: i.product?.sku || i._id?.toString() || 'SKU-PKY',
+            sku: i.sku || i.product?.sku || i._id?.toString() || 'SKU-PKY',
             name: i.name || i.product?.name || 'Handcrafted Product',
-            variant: i.product?.subCategory || 'Standard',
+            variant: i.variant || i.product?.subCategory || 'Standard',
             price: i.price,
             quantity: i.quantity || 1,
             image: i.image || i.product?.images?.[0] || 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=300',
@@ -232,8 +245,11 @@ const CartService = {
       }
 
       const consolidatedItems = Array.from(consolidatedMap.values());
-      const totalAmount = consolidatedItems.reduce((s, i) => s + (i.price * i.quantity), 0);
-      const itemCount = consolidatedItems.reduce((s, i) => s + i.quantity, 0);
+      let totalAmount = consolidatedItems.reduce((s, i) => s + ((i.price || 0) * (i.quantity || 1)), 0);
+      if (totalAmount === 0 && c.recoveredAmount && c.recoveredAmount > 0) {
+        totalAmount = c.recoveredAmount;
+      }
+      const itemCount = consolidatedItems.reduce((s, i) => s + (i.quantity || 1), 0);
 
       // Timeline handling: use saved timeline if exists, else construct initial steps
       const timeline = Array.isArray(c.timeline) && c.timeline.length > 0 ? c.timeline : [
@@ -278,7 +294,7 @@ const CartService = {
         isPartialRecovery: !!c.isPartialRecovery,
         recoveredProducts: c.recoveredProducts || [],
         recoveredOrderNumber: c.recoveredOrderNumber || null,
-        recoveredAmount: c.recoveredAmount || null,
+        recoveredAmount: c.recoveredAmount ? Math.min(totalAmount > 0 ? totalAmount : c.recoveredAmount, c.recoveredAmount) : null,
         recoveredAt: c.recoveredAt || null,
         purchasedItems: c.purchasedItems || [],
         timeline,
@@ -377,8 +393,16 @@ const CartService = {
       convertedItems = cart.items;
     }
 
-    const calculatedWonBack = wonBackAmount || convertedItems.reduce((s, i) => s + (i.price * i.quantity), 0);
-    const isPartial = convertedItems.length < cart.items.length;
+    // Calculate initial cart value from active items or previously purchased items
+    const cartItemsValue = (cart.items || []).reduce((s, i) => s + ((Number(i.price) || 0) * (Number(i.quantity) || 1)), 0);
+    const purchasedItemsValue = (cart.purchasedItems || []).reduce((s, i) => s + ((Number(i.price) || 0) * (Number(i.quantity) || 1)), 0);
+    const maxCartValue = Math.max(cartItemsValue, purchasedItemsValue, Number(wonBackAmount) || 0);
+
+    const calculatedWonBack = Math.min(
+      maxCartValue,
+      wonBackAmount || convertedItems.reduce((s, i) => s + ((Number(i.price) || 0) * (Number(i.quantity) || 1)), 0) || maxCartValue
+    );
+    const isPartial = convertedItems.length < (cart.items.length || 1);
 
     // Detailed breakdown with Product Name, Product Price, Total Price, Time with AM/PM
     const itemsDetailList = convertedItems
@@ -397,7 +421,7 @@ const CartService = {
       cart.timeline = [
         {
           event: 'Cart Created',
-          note: `Customer added ${cart.items.length} item(s) to bag`,
+          note: `Customer added ${cart.items.length || 1} item(s) to bag`,
           timestamp: cart.createdAt || now,
         },
         {
@@ -408,12 +432,15 @@ const CartService = {
       ];
     }
 
-    cart.timeline.push(newEvent);
+    const isDuplicateOrder = cart.timeline.some((t) => t.note && t.note.includes(`Order #${autoOrder}`));
+    if (!isDuplicateOrder) {
+      cart.timeline.push(newEvent);
+    }
 
     const targetSkus = convertedItems.map((i) => i.sku || i.name).filter(Boolean);
     cart.recoveredProducts = Array.from(new Set([...(cart.recoveredProducts || []), ...targetSkus]));
 
-    const allRecovered = cart.items.every((i) =>
+    const allRecovered = cart.items.length === 0 || cart.items.every((i) =>
       (cart.recoveredProducts || []).includes(i.sku) || (cart.recoveredProducts || []).includes(i.name)
     );
 
@@ -421,7 +448,11 @@ const CartService = {
     cart.isPartialRecovery = !allRecovered;
     cart.recoveredAt = now;
     cart.recoveredOrderNumber = autoOrder;
-    cart.recoveredAmount = (cart.recoveredAmount || 0) + calculatedWonBack;
+    if (!isDuplicateOrder) {
+      cart.recoveredAmount = Math.min(maxCartValue, (cart.recoveredAmount || 0) + calculatedWonBack);
+    } else {
+      cart.recoveredAmount = Math.min(maxCartValue, cart.recoveredAmount || calculatedWonBack);
+    }
 
     await cart.save();
     return cart;

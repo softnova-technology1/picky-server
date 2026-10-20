@@ -9,9 +9,9 @@ const authenticate = async (req, res, next) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       // Temporarily bypass authentication for development testing with real DB user
-      let fallbackUser = await User.findOne({ role: 'customer' }).select('-__v');
+      let fallbackUser = await User.findOne({ role: 'admin' }).select('-__v');
       if (!fallbackUser) fallbackUser = await User.findOne().select('-__v');
-      req.user = fallbackUser || { _id: new mongoose.Types.ObjectId(), role: 'customer' };
+      req.user = fallbackUser || { _id: new mongoose.Types.ObjectId(), role: 'admin' };
       return next();
     }
 

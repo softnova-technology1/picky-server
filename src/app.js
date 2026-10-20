@@ -27,6 +27,7 @@ const customizationRoutes = require('./modules/customization/customization.route
 const uploadRoutes = require('./modules/upload/upload.routes');
 const contactRoutes = require('./modules/contact/contact.routes');
 const notificationRoutes = require('./modules/notification/notification.routes');
+const reviewRoutes = require('./modules/review/review.routes');
 const path = require('path');
 
 const app = express();
@@ -83,6 +84,7 @@ app.use(`${API}/customization`, customizationRoutes);
 app.use(`${API}/upload`, uploadRoutes);
 app.use(`${API}/contact`, contactRoutes);
 app.use(`${API}/notifications`, notificationRoutes);
+app.use(`${API}/reviews`, reviewRoutes);
 
 // ─── 404 Handler ─────────────────────────────────────────────────────────────
 app.use((req, res, next) => {

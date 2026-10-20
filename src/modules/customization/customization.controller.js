@@ -1,5 +1,6 @@
 const Customization = require('../../models/customization.model');
 const { ApiResponse } = require('../../utils/apiResponse');
+const customizationSse = require('../../utils/customizationSse');
 
 const getAllCustomizations = async (req, res, next) => {
   try {
@@ -31,13 +32,23 @@ const updateCustomization = async (req, res, next) => {
       { new: true, upsert: true }
     );
 
+    // Instant Real-Time Push to all connected storefront clients & devices
+    customizationSse.broadcastCustomization(pageId, sections);
+
     return res.json(ApiResponse.success(customization, 'Customization updated successfully'));
   } catch (err) {
     next(err);
   }
 };
 
+// SSE Stream Handler for real-time live synchronization
+const streamCustomizationUpdates = (req, res) => {
+  customizationSse.addClient(req, res);
+};
+
 module.exports = {
   getAllCustomizations,
   updateCustomization,
+  streamCustomizationUpdates,
 };
+
