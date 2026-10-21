@@ -686,15 +686,21 @@ const OrderService = {
       await session.commitTransaction();
       logger.info(`[ORDER] ✅ Order ${order.orderNumber} committed successfully`);
 
-      // Auto-sync with Abandoned Cart Recovery (ONLY for cart checkouts or single items from cart, NEVER direct Buy Now!)
-      if (!isBuyNow || fromCart) {
+      // Auto-sync with Abandoned Cart Recovery (ONLY if paid AND items match cart items)
+      if (order.paymentStatus === 'paid' && (!isBuyNow || fromCart) && cart?._id) {
         try {
-          if (cart?._id) {
+          const cartProductIds = (cart.items || []).map((i) => (i.product?._id || i.product || i._id)?.toString()).filter(Boolean);
+          const convertedFromCart = (order.items || []).filter((i) => {
+            const pId = (i.product?._id || i.product || i._id)?.toString();
+            return cartProductIds.includes(pId) || (cart.items || []).some((ci) => ci.name === i.name || (ci.sku && ci.sku === i.sku));
+          });
+
+          if (convertedFromCart.length > 0) {
             const CartService = require('../cart/cart.service');
             await CartService.markCartRecovered(cart._id, {
               orderNumber: order.orderNumber,
-              convertedItems: order.items,
-              wonBackAmount: order.total,
+              convertedItems: convertedFromCart,
+              wonBackAmount: convertedFromCart.reduce((sum, i) => sum + ((i.price || 0) * (i.quantity || 1)), 0),
             });
           }
         } catch (recErr) {
@@ -941,16 +947,26 @@ const OrderService = {
             );
           }
 
-          // Auto sync with Abandoned Cart Recovery (mark as recovered/partial)
-          try {
-            const CartService = require('../cart/cart.service');
-            await CartService.markCartRecovered(existingCart._id, {
-              orderNumber: order.orderNumber,
-              convertedItems: formattedItems,
-              wonBackAmount: finalTotal,
-            });
-          } catch (recErr) {
-            logger.warn(`[RECOVERY_SYNC] Failed auto-sync: ${recErr.message}`);
+          // Auto sync with Abandoned Cart Recovery (ONLY if paid AND items match cart items)
+          if (order.paymentStatus === 'paid') {
+            try {
+              const cartProductIds = (existingCart.items || []).map((i) => (i.product?._id || i.product || i._id)?.toString()).filter(Boolean);
+              const convertedFromCart = formattedItems.filter((i) => {
+                const pId = (i.product?._id || i.product || i._id || i.id)?.toString();
+                return cartProductIds.includes(pId) || (existingCart.items || []).some((ci) => ci.name === i.name || (ci.sku && ci.sku === i.sku));
+              });
+
+              if (convertedFromCart.length > 0) {
+                const CartService = require('../cart/cart.service');
+                await CartService.markCartRecovered(existingCart._id, {
+                  orderNumber: order.orderNumber,
+                  convertedItems: convertedFromCart,
+                  wonBackAmount: convertedFromCart.reduce((sum, i) => sum + ((i.price || 0) * (i.quantity || 1)), 0),
+                });
+              }
+            } catch (recErr) {
+              logger.warn(`[RECOVERY_SYNC] Failed auto-sync: ${recErr.message}`);
+            }
           }
         }
       }

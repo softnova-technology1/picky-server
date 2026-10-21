@@ -220,20 +220,16 @@ const CartService = {
         ? addrParts.join(', ')
         : (city ? `${city}, ${state}` : 'Address not specified');
 
-      // Use active items if present, or fallback to purchasedItems if cart items were cleared upon conversion
-      const rawItemList = (Array.isArray(c.items) && c.items.length > 0)
-        ? c.items
-        : (Array.isArray(c.purchasedItems) && c.purchasedItems.length > 0 ? c.purchasedItems : []);
-
-      // Consolidate duplicate products if any exist
-      const consolidatedMap = new Map();
-      for (const i of rawItemList) {
+      // 1. Process active items currently in bag
+      const rawActiveItems = Array.isArray(c.items) ? c.items : [];
+      const consolidatedActiveMap = new Map();
+      for (const i of rawActiveItems) {
         const pKey = (i.product?._id || i.product || i.name).toString();
-        if (consolidatedMap.has(pKey)) {
-          const prev = consolidatedMap.get(pKey);
+        if (consolidatedActiveMap.has(pKey)) {
+          const prev = consolidatedActiveMap.get(pKey);
           prev.quantity += (i.quantity || 1);
         } else {
-          consolidatedMap.set(pKey, {
+          consolidatedActiveMap.set(pKey, {
             sku: i.sku || i.product?.sku || i._id?.toString() || 'SKU-PKY',
             name: i.name || i.product?.name || 'Handcrafted Product',
             variant: i.variant || i.product?.subCategory || 'Standard',
@@ -243,19 +239,27 @@ const CartService = {
           });
         }
       }
-
-      const consolidatedItems = Array.from(consolidatedMap.values());
-      let totalAmount = consolidatedItems.reduce((s, i) => s + ((i.price || 0) * (i.quantity || 1)), 0);
-      if (totalAmount === 0 && c.recoveredAmount && c.recoveredAmount > 0) {
-        totalAmount = c.recoveredAmount;
-      }
+      const consolidatedItems = Array.from(consolidatedActiveMap.values());
+      const totalAmount = consolidatedItems.reduce((s, i) => s + ((i.price || 0) * (i.quantity || 1)), 0);
       const itemCount = consolidatedItems.reduce((s, i) => s + (i.quantity || 1), 0);
+
+      // 2. Process purchased / won-back items
+      const rawPurchased = Array.isArray(c.purchasedItems) ? c.purchasedItems : [];
+      const consolidatedPurchased = rawPurchased.map((p) => ({
+        sku: p.sku || p.product?.sku || 'SKU-PKY',
+        name: p.name || p.product?.name || 'Handcrafted Product',
+        price: p.price,
+        quantity: p.quantity || 1,
+        image: p.image || p.product?.images?.[0] || 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=300',
+        orderNumber: p.orderNumber || c.recoveredOrderNumber || 'WON-BACK',
+        purchasedAt: p.purchasedAt || c.recoveredAt,
+      }));
 
       // Timeline handling: use saved timeline if exists, else construct initial steps
       const timeline = Array.isArray(c.timeline) && c.timeline.length > 0 ? c.timeline : [
         {
           event: 'Cart Created',
-          note: `Customer added ${consolidatedItems.length} item(s) to bag`,
+          note: `Customer added ${consolidatedItems.length || 1} item(s) to bag`,
           timestamp: c.createdAt || new Date().toISOString(),
         },
         {
@@ -294,9 +298,9 @@ const CartService = {
         isPartialRecovery: !!c.isPartialRecovery,
         recoveredProducts: c.recoveredProducts || [],
         recoveredOrderNumber: c.recoveredOrderNumber || null,
-        recoveredAmount: c.recoveredAmount ? Math.min(totalAmount > 0 ? totalAmount : c.recoveredAmount, c.recoveredAmount) : null,
+        recoveredAmount: Number(c.recoveredAmount) || 0,
         recoveredAt: c.recoveredAt || null,
-        purchasedItems: c.purchasedItems || [],
+        purchasedItems: consolidatedPurchased,
         timeline,
       };
     });
@@ -440,9 +444,52 @@ const CartService = {
     const targetSkus = convertedItems.map((i) => i.sku || i.name).filter(Boolean);
     cart.recoveredProducts = Array.from(new Set([...(cart.recoveredProducts || []), ...targetSkus]));
 
-    const allRecovered = cart.items.length === 0 || cart.items.every((i) =>
-      (cart.recoveredProducts || []).includes(i.sku) || (cart.recoveredProducts || []).includes(i.name)
-    );
+    // Move converted items from cart.items to cart.purchasedItems
+    const convertedNames = convertedItems.map((i) => i.name?.toLowerCase().trim()).filter(Boolean);
+    const convertedSkus = convertedItems.map((i) => i.sku?.toLowerCase().trim()).filter(Boolean);
+    const convertedPIds = convertedItems.map((i) => (i.product?._id || i.product || i._id)?.toString()).filter(Boolean);
+
+    const remainingItems = [];
+    const justPurchased = [];
+
+    for (const item of (cart.items || [])) {
+      const pId = (item.product?._id || item.product || item._id)?.toString();
+      const name = item.name?.toLowerCase().trim();
+      const sku = item.sku?.toLowerCase().trim();
+
+      const isConverted = (pId && convertedPIds.includes(pId)) ||
+                          (sku && convertedSkus.includes(sku)) ||
+                          (name && convertedNames.includes(name));
+
+      if (isConverted) {
+        justPurchased.push({
+          product: item.product?._id || item.product || item._id,
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity || 1,
+          image: item.image,
+          sku: item.sku,
+          orderNumber: autoOrder,
+          purchasedAt: now,
+        });
+      } else {
+        remainingItems.push(item);
+      }
+    }
+
+    cart.items = remainingItems;
+
+    if (!cart.purchasedItems) cart.purchasedItems = [];
+    for (const jp of justPurchased) {
+      const alreadyHas = cart.purchasedItems.some(
+        (pi) => pi.orderNumber === jp.orderNumber && (pi.name === jp.name || pi.sku === jp.sku)
+      );
+      if (!alreadyHas) {
+        cart.purchasedItems.push(jp);
+      }
+    }
+
+    const allRecovered = cart.items.length === 0;
 
     cart.status = allRecovered ? 'recovered' : 'partial_recovery';
     cart.isPartialRecovery = !allRecovered;
