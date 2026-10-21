@@ -5,7 +5,7 @@ const initializeDB = require('./config/initializeDB');
 const redis = require('./config/redis');
 const app = require('./app');
 const logger = require('./utils/logger');
-// Server entry point - Picky Backend API (Atlas DB configured)
+// Server entry point - Picky Backend API (Atlas DB configured & Google OAuth enabled)
 const PORT = process.env.PORT || 5000;
 
 const start = async () => {

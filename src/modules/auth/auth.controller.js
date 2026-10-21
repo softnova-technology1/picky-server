@@ -15,6 +15,13 @@ const verifyOTP = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+const googleLogin = async (req, res, next) => {
+  try {
+    const tokens = await AuthService.googleLogin(req.body);
+    return res.json(ApiResponse.success(tokens, 'Google authentication successful'));
+  } catch (err) { next(err); }
+};
+
 const adminLogin = async (req, res, next) => {
   try {
     const tokens = await AuthService.adminLogin(req.body.email, req.body.password);
@@ -40,7 +47,9 @@ const logout = async (req, res, next) => {
 
 const getMe = async (req, res, next) => {
   try {
-    return res.json(ApiResponse.success(req.user));
+    const userId = req.user?._id || req.user?.id;
+    const user = await AuthService.getMe(userId, req.user);
+    return res.json(ApiResponse.success(user));
   } catch (err) { next(err); }
 };
 
@@ -95,6 +104,7 @@ const changePassword = async (req, res, next) => {
 module.exports = {
   sendOTP,
   verifyOTP,
+  googleLogin,
   adminLogin,
   refreshToken,
   logout,

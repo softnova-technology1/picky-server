@@ -632,10 +632,22 @@ const OrderService = {
         );
       }
 
-      // Step 4: Increment user's order count
+      // Step 4: Increment user's order count & sync phone to profile if user has no phone linked
+      const userUpdate = { $inc: { orderCount: 1 } };
+      const orderPhone = (shippingAddress?.phone || '').toString().replace(/\D/g, '').slice(-10);
+      if (orderPhone && orderPhone.length === 10) {
+        try {
+          const freshUser = await User.findById(user._id).select('phone');
+          if (freshUser && (!freshUser.phone || !freshUser.phone.trim())) {
+            userUpdate.phone = orderPhone;
+          }
+        } catch (phoneSyncErr) {
+          logger.warn(`[ORDER] Non-critical phone sync notice: ${phoneSyncErr.message}`);
+        }
+      }
       await User.findByIdAndUpdate(
         user._id,
-        { $inc: { orderCount: 1 } },
+        userUpdate,
         { session }
       );
 
@@ -866,8 +878,20 @@ const OrderService = {
       }
     }
 
-    // Increment user orderCount
-    await User.findByIdAndUpdate(user._id, { $inc: { orderCount: 1 } });
+    // Increment user orderCount & sync phone to profile if user has no phone linked
+    const userUpdate = { $inc: { orderCount: 1 } };
+    const orderPhone = (shippingAddress?.phone || '').toString().replace(/\D/g, '').slice(-10);
+    if (orderPhone && orderPhone.length === 10) {
+      try {
+        const freshUser = await User.findById(user._id).select('phone');
+        if (freshUser && (!freshUser.phone || !freshUser.phone.trim())) {
+          userUpdate.phone = orderPhone;
+        }
+      } catch (phoneSyncErr) {
+        logger.warn(`[ORDER] Non-critical phone sync notice: ${phoneSyncErr.message}`);
+      }
+    }
+    await User.findByIdAndUpdate(user._id, userUpdate);
 
     // Clear cart or remove ordered items (ONLY for cart checkouts or single items from cart, NEVER direct Buy Now!)
     try {
