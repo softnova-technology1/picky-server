@@ -1,27 +1,24 @@
 const express = require('express');
 const router = express.Router();
 const orderController = require('./order.controller');
-const { authenticate } = require('../../middleware/auth.middleware');
+const { authenticate, optionalAuthenticate } = require('../../middleware/auth.middleware');
 const { requireRole } = require('../../middleware/role.middleware');
 const { validate } = require('../../middleware/validate.middleware');
 const { addTrackingSchema, updateStatusSchema } = require('./order.schema');
 
-// ─── Razorpay Webhook (audit fix #2) ───────────────────────────────────────
-// IMPORTANT: This route must use express.raw() — NOT express.json().
-// Razorpay webhook signature is verified against the raw request body bytes.
-// If json() middleware parses it first, the raw body is lost and HMAC fails.
+// ─── Razorpay Webhook ────────────────────────────────────────────────────────
+// Raw bytes are preserved via app.js express.json verify hook into req.rawBody
 router.post(
   '/razorpay/webhook',
-  require('express').raw({ type: 'application/json' }),
   orderController.handleRazorpayWebhook
 );
 
-// ─── Customer Order Creation & List ──────────────────────────────────────
-router.post('/checkout/reserve', authenticate, orderController.reserveCheckout);
-router.post('/checkout/release', authenticate, orderController.releaseCheckout);
-router.post('/razorpay/create-order', authenticate, orderController.createRazorpayOrder);
-router.post('/razorpay/verify', authenticate, orderController.verifyRazorpayOrder);
-router.post('/', authenticate, orderController.createOrder);
+// ─── Customer Order Creation & List (Guest or Logged In) ─────────────────────
+router.post('/checkout/reserve', optionalAuthenticate, orderController.reserveCheckout);
+router.post('/checkout/release', optionalAuthenticate, orderController.releaseCheckout);
+router.post('/razorpay/create-order', optionalAuthenticate, orderController.createRazorpayOrder);
+router.post('/razorpay/verify', optionalAuthenticate, orderController.verifyRazorpayOrder);
+router.post('/', optionalAuthenticate, orderController.createOrder);
 
 router.get('/track/:orderNumber', orderController.trackOrderByNumber);
 router.get('/', authenticate, orderController.myOrders);

@@ -41,11 +41,11 @@ const createOrder = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-// audit fix #2 — Razorpay Webhook handler
+// Razorpay Webhook handler
 const handleRazorpayWebhook = async (req, res, next) => {
   try {
     const signature = req.headers['x-razorpay-signature'];
-    const rawBody = req.body; // Buffer (express.raw middleware used on this route)
+    const rawBody = req.rawBody || req.body;
     const result = await OrderService.handleWebhook(rawBody, signature);
     return res.status(200).json({ received: true, ...result });
   } catch (err) { next(err); }
