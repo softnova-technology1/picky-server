@@ -8,11 +8,15 @@ const settingsSchema = new mongoose.Schema(
     contactPhone: { type: String, default: '+91 98765 43210' },
     whatsappNumber: { type: String, default: '+91 98765 43210' },
     address: {
-      street: { type: String, default: 'Main Road, Peravurani' },
-      city: { type: String, default: 'Thanjavur District' },
-      state: { type: String, default: 'Tamil Nadu' },
-      pincode: { type: String, default: '614804' },
-      country: { type: String, default: 'India' },
+      type: mongoose.Schema.Types.Mixed,
+      default: () => ({
+        street: 'Main Road, Peravurani',
+        city: 'Thanjavur District',
+        state: 'Tamil Nadu',
+        pincode: '614804',
+        country: 'India',
+        fullAddress: 'Main Road, Peravurani, Thanjavur District, Tamil Nadu, 614804',
+      }),
     },
     announcementBar: {
       enabled: { type: Boolean, default: true },
@@ -64,6 +68,14 @@ const settingsSchema = new mongoose.Schema(
       logoUrl: { type: String, default: '/images/logo.png' },
       primaryColor: { type: String, default: '#7c3aed' },
       accentColor: { type: String, default: '#ec4899' },
+    },
+    theme: {
+      type: mongoose.Schema.Types.Mixed,
+      default: () => ({
+        preset: 'purple',
+        primaryColor: '#7c3aed',
+        name: 'Royal Purple',
+      }),
     },
   },
   { timestamps: true, strict: false }
