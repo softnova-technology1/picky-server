@@ -21,7 +21,7 @@ const addTrackingSchema = z.object({
 });
 
 const updateStatusSchema = z.object({
-  status: z.enum(['confirmed', 'shipped', 'delivered', 'cancelled']),
+  status: z.enum(['placed', 'confirmed', 'shipped', 'delivered', 'cancelled']),
   note: z.string().optional(),
   courier: z.string().optional(),
   courierUrl: z.string().optional(),

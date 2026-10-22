@@ -4,7 +4,7 @@ const statusHistorySchema = new mongoose.Schema(
   {
     status: {
       type: String,
-      enum: ['confirmed', 'shipped', 'out_for_delivery', 'delivered', 'cancelled'],
+      enum: ['placed', 'confirmed', 'shipped', 'out_for_delivery', 'delivered', 'cancelled'],
       required: true,
     },
     timestamp: { type: Date, default: Date.now },
@@ -79,8 +79,8 @@ const orderSchema = new mongoose.Schema(
     // Order Status (Admin-Driven Workflow)
     status: {
       type: String,
-      enum: ['confirmed', 'shipped', 'out_for_delivery', 'delivered', 'cancelled'],
-      default: 'confirmed',
+      enum: ['placed', 'confirmed', 'shipped', 'out_for_delivery', 'delivered', 'cancelled'],
+      default: 'placed',
     },
     statusHistory: [statusHistorySchema], // push on every status change
 

@@ -547,8 +547,8 @@ const OrderService = {
       razorpayPaymentId,
       razorpaySignature,
       courier: courier || (deliveryMode === 'pickup' ? 'Self Store Pickup' : ''),
-      status: 'confirmed',
-      statusHistory: [{ status: 'confirmed', note: 'Prepaid via Razorpay (Online)', timestamp: new Date() }],
+      status: 'placed',
+      statusHistory: [{ status: 'placed', note: 'Order placed by customer (Prepaid via Razorpay)', timestamp: new Date() }],
     });
 
       triggerOrderNotification(order, user, shippingAddress);
@@ -612,13 +612,6 @@ const OrderService = {
           await Cart.findOneAndUpdate({ user: user._id }, { items: [], coupon: null, couponDiscount: 0 });
         }
       }
-
-      NotificationService.sendOrderConfirmed(
-        user?.phone || shippingAddress?.phone,
-        user?.name || shippingAddress?.fullName || 'Customer',
-        order.orderNumber,
-        order.total
-      ).catch((err) => logger.error(`[WATI] Order confirmed notification failed: ${err.message}`));
 
       return order;
   },
@@ -702,8 +695,8 @@ const OrderService = {
       paymentStatus: resolvedPaymentStatus,
       razorpayPaymentId,
       razorpayOrderId,
-      status: resolvedPaymentStatus === 'paid' ? 'confirmed' : 'pending',
-      statusHistory: [{ status: resolvedPaymentStatus === 'paid' ? 'confirmed' : 'pending', note: `Order placed via ${paymentMethod}`, timestamp: new Date() }],
+      status: 'placed',
+      statusHistory: [{ status: 'placed', note: `Order placed via ${paymentMethod}`, timestamp: new Date() }],
       courier: courier || (deliveryMode === 'pickup' ? 'Self Store Pickup' : ''),
     });
 
@@ -850,13 +843,6 @@ const OrderService = {
         }
       }
     } catch (_) {}
-
-    NotificationService.sendOrderConfirmed(
-      user.phone || shippingAddress.phone,
-      user.name || shippingAddress.fullName || 'Customer',
-      order.orderNumber,
-      order.total
-    ).catch((err) => logger.warn(`[NOTIFICATION] Order notification failed: ${err.message}`));
 
     return order;
   },
@@ -1023,8 +1009,8 @@ const OrderService = {
     if (existing.status === 'cancelled' && status !== 'cancelled') {
       throw new AppError('Cancelled orders cannot be reopened.', 400);
     }
-    if (existing.status === 'shipped' && status === 'confirmed') {
-      throw new AppError('Shipped orders cannot be reverted back to confirmed.', 400);
+    if (existing.status === 'shipped' && (status === 'confirmed' || status === 'placed')) {
+      throw new AppError('Shipped orders cannot be reverted back to confirmed or placed.', 400);
     }
 
     if (status === 'shipped') {
@@ -1035,7 +1021,7 @@ const OrderService = {
 
     // If status transitions from confirmed/processing to shipped, delivered, or out_for_delivery:
     // Move from reserved to sold!
-    const wasPendingFulfillment = ['confirmed', 'processing', 'pending'].includes(existing.status);
+    const wasPendingFulfillment = ['placed', 'confirmed', 'processing', 'pending'].includes(existing.status);
     const isFulfilling = ['shipped', 'delivered', 'out_for_delivery'].includes(status);
 
     if (wasPendingFulfillment && isFulfilling) {
@@ -1087,14 +1073,24 @@ const OrderService = {
 
     const order = await OrderRepo.updateStatus(orderId, status, note, { courier, courierUrl, trackingId });
 
-    // Send WhatsApp on delivered or cancelled (audit fix #4 — added cancelled)
+    // Send WhatsApp on confirmed, delivered, or cancelled
     const user = await User.findById(order.user).lean();
-    if (user) {
-      if (status === 'delivered') {
-        NotificationService.sendOrderDelivered(user.phone, order.orderNumber)
+    const customerPhone = user?.phone || order.shippingAddress?.phone || existing.shippingAddress?.phone;
+    const customerName = user?.name || order.shippingAddress?.fullName || existing.shippingAddress?.fullName || 'Customer';
+
+    if (status === 'confirmed' && existing.status !== 'confirmed') {
+      if (customerPhone) {
+        NotificationService.sendOrderConfirmed(customerPhone, customerName, order.orderNumber, order.total)
+          .catch((err) => logger.error(`[WATI] Order confirmed notification failed: ${err.message}`));
+      }
+    } else if (status === 'delivered') {
+      if (customerPhone) {
+        NotificationService.sendOrderDelivered(customerPhone, order.orderNumber)
           .catch((err) => logger.error(`[WATI] Order delivered notification failed: ${err.message}`));
-      } else if (status === 'cancelled') {
-        NotificationService.sendOrderCancelled(user.phone, order.orderNumber, note)
+      }
+    } else if (status === 'cancelled') {
+      if (customerPhone) {
+        NotificationService.sendOrderCancelled(customerPhone, order.orderNumber, note)
           .catch((err) => logger.error(`[WATI] Order cancelled notification failed: ${err.message}`));
       }
     }
@@ -1110,7 +1106,7 @@ const OrderService = {
       throw new AppError('You are not authorized to cancel this order', 403);
     }
 
-    const cancellableStatuses = ['pending', 'confirmed'];
+    const cancellableStatuses = ['placed', 'pending', 'confirmed'];
     if (!cancellableStatuses.includes(existing.status)) {
       throw new AppError(`Order cannot be cancelled because it is already '${existing.status}'.`, 400);
     }
@@ -1126,7 +1122,7 @@ const OrderService = {
 
     // If order was not cancelled, restore inventory quantities back
     if (existing.status !== 'cancelled' && Array.isArray(existing.items)) {
-      const wasPendingFulfillment = ['confirmed', 'processing', 'pending'].includes(existing.status);
+      const wasPendingFulfillment = ['placed', 'confirmed', 'processing', 'pending'].includes(existing.status);
       for (const item of existing.items) {
         if (item.product) {
           await Inventory.findOneAndUpdate(
