@@ -2,13 +2,52 @@ const path = require('path');
 const fs = require('fs');
 const ContactInquiry = require('../../models/contact.model');
 const Notification = require('../../models/notification.model');
+const { uploadFile, deleteImage } = require('../../services/s3.service');
 const { sendSuccess, sendError } = require('../../utils/apiResponse');
 const AppError = require('../../utils/appError');
 const logger = require('../../utils/logger');
 
 const ContactController = {
   /**
+   * Directly Upload Reference File to S3 Bucket (picky/inquiries)
+   * Public endpoint used before/during contact form submission
+   */
+  async uploadFile(req, res, next) {
+    try {
+      if (!req.file || !req.file.buffer) {
+        return next(new AppError('No file provided for upload', 400));
+      }
+
+      const { url, key } = await uploadFile(
+        req.file.buffer,
+        'inquiries',
+        req.file.originalname,
+        req.file.mimetype
+      );
+
+      logger.info(`📎 Contact reference file uploaded to S3: ${url} (Key: ${key})`);
+
+      return sendSuccess(
+        res,
+        {
+          url,
+          key,
+          originalName: req.file.originalname,
+          mimeType: req.file.mimetype,
+          size: req.file.size,
+        },
+        200,
+        null,
+        'File uploaded to S3 successfully'
+      );
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  /**
    * Submit Contact Form (Public Endpoint)
+   * Supports pre-uploaded S3 URL or direct multipart file upload
    * Supports source: 'contact_page' | 'homepage' | 'footer'
    */
   async submit(req, res, next) {
@@ -24,23 +63,52 @@ const ContactController = {
 
       let fileData = {
         url: '',
+        key: '',
         originalName: '',
         mimeType: '',
         size: 0,
         filename: '',
       };
 
-      if (req.file) {
-        const host = req.get('host');
-        const protocol = req.protocol || 'http';
-        const fileUrl = `${protocol}://${host}/uploads/contact/${req.file.filename}`;
-
+      // Case 1: File pre-uploaded to S3 (passed via body)
+      if (req.body.fileUrl) {
         fileData = {
-          url: fileUrl,
+          url: req.body.fileUrl,
+          key: req.body.fileKey || req.body.key || '',
+          originalName: req.body.fileName || req.body.originalName || 'Attachment',
+          mimeType: req.body.fileMime || req.body.mimeType || '',
+          size: Number(req.body.fileSize || req.body.size || 0),
+          filename: req.body.fileName || req.body.originalName || '',
+        };
+      } else if (req.body.file && typeof req.body.file === 'object') {
+        fileData = {
+          url: req.body.file.url || '',
+          key: req.body.file.key || '',
+          originalName: req.body.file.originalName || '',
+          mimeType: req.body.file.mimeType || '',
+          size: Number(req.body.file.size || 0),
+          filename: req.body.file.filename || req.body.file.originalName || '',
+        };
+      } else if (typeof req.body.file === 'string' && req.body.file.startsWith('http')) {
+        fileData.url = req.body.file;
+        fileData.originalName = req.body.originalName || 'Attachment';
+      }
+
+      // Case 2: File uploaded directly in multipart form (req.file)
+      if (req.file && req.file.buffer) {
+        const uploadResult = await uploadFile(
+          req.file.buffer,
+          'inquiries',
+          req.file.originalname,
+          req.file.mimetype
+        );
+        fileData = {
+          url: uploadResult.url,
+          key: uploadResult.key,
           originalName: req.file.originalname,
           mimeType: req.file.mimetype,
           size: req.file.size,
-          filename: req.file.filename,
+          filename: path.basename(uploadResult.key),
         };
       }
 
@@ -76,8 +144,8 @@ const ContactController = {
         message: notifMessage,
         unread: true,
         starred: false,
-        link: '/softpicky-sn2026/inquiries',
-        linkText: 'View Inquiries',
+        link: '/softpicky-sn2026/notifications',
+        linkText: 'View Inquiry',
         metadata: {
           inquiryId: inquiry._id,
           fullName: inquiry.fullName,
@@ -86,13 +154,14 @@ const ContactController = {
           source: cleanSource,
           hasAttachment: Boolean(fileData.url),
           fileUrl: fileData.url,
+          fileKey: fileData.key,
           fileName: fileData.originalName,
           fileMime: fileData.mimeType,
           fileSize: fileData.size,
         },
       });
 
-      logger.info(`📩 New Contact Inquiry received: ID=${inquiry._id}, Source=${cleanSource}, Name="${fullName}"`);
+      logger.info(`📩 New Contact Inquiry received: ID=${inquiry._id}, Source=${cleanSource}, Name="${fullName}", Attachment=${fileData.url || 'None'}`);
 
       return sendSuccess(
         res,
@@ -267,29 +336,33 @@ const ContactController = {
   },
 
   /**
-   * Download attachment file
+   * Download or view attachment file (Redirects to S3 or serves local file)
    */
   async downloadFile(req, res, next) {
     try {
       const inquiry = await ContactInquiry.findById(req.params.id);
-      if (!inquiry || !inquiry.file || !inquiry.file.filename) {
+      if (!inquiry || !inquiry.file || (!inquiry.file.url && !inquiry.file.filename)) {
         return next(new AppError('Attachment not found for this inquiry', 404));
       }
 
-      const filePath = path.join(__dirname, '../../../uploads/contact', inquiry.file.filename);
-      if (!fs.existsSync(filePath)) {
-        return next(new AppError('File does not exist on server disk', 404));
+      if (inquiry.file.url && inquiry.file.url.startsWith('http')) {
+        return res.redirect(inquiry.file.url);
       }
 
-      const originalName = inquiry.file.originalName || inquiry.file.filename;
-      return res.download(filePath, originalName);
+      const filePath = path.join(__dirname, '../../../uploads/inquiries', inquiry.file.filename || '');
+      if (fs.existsSync(filePath)) {
+        const originalName = inquiry.file.originalName || inquiry.file.filename;
+        return res.download(filePath, originalName);
+      }
+
+      return next(new AppError('File does not exist on server disk', 404));
     } catch (err) {
       next(err);
     }
   },
 
   /**
-   * Delete inquiry
+   * Delete inquiry and its S3 reference asset
    */
   async delete(req, res, next) {
     try {
@@ -298,12 +371,9 @@ const ContactController = {
         return next(new AppError('Inquiry not found', 404));
       }
 
-      // Delete file from disk if present
-      if (inquiry.file && inquiry.file.filename) {
-        const filePath = path.join(__dirname, '../../../uploads/contact', inquiry.file.filename);
-        if (fs.existsSync(filePath)) {
-          fs.unlink(filePath, () => {});
-        }
+      // Delete file from S3 / disk if present
+      if (inquiry.file && (inquiry.file.key || inquiry.file.url)) {
+        await deleteImage(inquiry.file.key || inquiry.file.url).catch(() => {});
       }
 
       // Remove corresponding notification
@@ -316,7 +386,7 @@ const ContactController = {
   },
 
   /**
-   * Bulk Delete Inquiries
+   * Bulk Delete Inquiries and associated S3 files
    */
   async bulkDelete(req, res, next) {
     try {
@@ -327,11 +397,8 @@ const ContactController = {
 
       const inquiries = await ContactInquiry.find({ _id: { $in: ids } });
       for (const inq of inquiries) {
-        if (inq.file && inq.file.filename) {
-          const filePath = path.join(__dirname, '../../../uploads/contact', inq.file.filename);
-          if (fs.existsSync(filePath)) {
-            fs.unlink(filePath, () => {});
-          }
+        if (inq.file && (inq.file.key || inq.file.url)) {
+          await deleteImage(inq.file.key || inq.file.url).catch(() => {});
         }
       }
 

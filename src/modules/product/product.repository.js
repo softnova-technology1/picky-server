@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Product = require('../../models/product.model');
 
 const ProductRepository = {
@@ -11,7 +12,11 @@ const ProductRepository = {
     return Product.find(filter).populate('category', 'name slug').sort(sortMap[sort] || sortMap.newest).skip(skip).limit(limit).lean();
   },
   count: (filter) => Product.countDocuments(filter),
-  findBySlug: (slug) => Product.findOne({ slug, isActive: true }).populate('category', 'name slug').lean(),
+  findBySlug: (slug) => {
+    const isObjectId = mongoose.isValidObjectId(slug);
+    const query = isObjectId ? { $or: [{ slug }, { _id: slug }], isActive: true } : { slug, isActive: true };
+    return Product.findOne(query).populate('category', 'name slug').lean();
+  },
   findById: (id) => Product.findById(id).lean(),
   search: (q, skip, limit) =>
     Product.find({ $text: { $search: q }, isActive: true }).sort({ score: { $meta: 'textScore' } }).skip(skip).limit(limit).lean(),

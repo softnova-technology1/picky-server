@@ -13,5 +13,8 @@ router.get('/live-stream', customizationController.streamCustomizationUpdates);
 // Admin: Update customization for a page
 router.put('/', authenticate, requireRole('admin'), customizationController.updateCustomization);
 
+// Admin: Clear an image from S3 storage and MongoDB customization collection
+router.post('/clear-image', authenticate, requireRole('admin'), customizationController.clearCustomizationImage);
+
 module.exports = router;
 
