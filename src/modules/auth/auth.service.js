@@ -89,10 +89,11 @@ const AuthService = {
     if (idToken) {
       try {
         const { OAuth2Client } = require('google-auth-library');
-        const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+        const googleAudience = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID;
+        const client = new OAuth2Client(googleAudience);
         const ticket = await client.verifyIdToken({
           idToken,
-          audience: process.env.GOOGLE_CLIENT_ID ? [process.env.GOOGLE_CLIENT_ID] : undefined,
+          audience: googleAudience ? [googleAudience] : undefined,
         });
         const payload = ticket.getPayload();
         email = payload.email;

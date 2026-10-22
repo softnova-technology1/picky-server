@@ -4,7 +4,7 @@
  */
 const paginate = (query = {}) => {
   const page = Math.max(1, parseInt(query.page) || 1);
-  const limit = Math.min(50, Math.max(1, parseInt(query.limit) || 20)); // capped at 50 (audit fix #11)
+  const limit = Math.min(5000, Math.max(1, parseInt(query.limit) || 20)); // allows up to 500 for full admin catalogs
   const skip = (page - 1) * limit;
 
   const buildPagination = (total) => ({

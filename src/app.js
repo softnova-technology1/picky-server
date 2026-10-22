@@ -29,6 +29,7 @@ const uploadRoutes = require('./modules/upload/upload.routes');
 const contactRoutes = require('./modules/contact/contact.routes');
 const notificationRoutes = require('./modules/notification/notification.routes');
 const reviewRoutes = require('./modules/review/review.routes');
+const returnRoutes = require('./modules/return/return.routes');
 const path = require('path');
 
 const app = express();
@@ -102,6 +103,7 @@ app.use(`${API}/upload`, uploadRoutes);
 app.use(`${API}/contact`, contactRoutes);
 app.use(`${API}/notifications`, notificationRoutes);
 app.use(`${API}/reviews`, reviewRoutes);
+app.use(`${API}/returns`, returnRoutes);
 
 // ─── 404 Handler ─────────────────────────────────────────────────────────────
 app.use((req, res, next) => {

@@ -203,7 +203,7 @@ const listProductsSchema = z.object({
   category: z.string().optional(),
   search: z.string().optional(),
   page: z.coerce.number().int().positive().optional(),
-  limit: z.coerce.number().int().positive().max(100).optional(),
+  limit: z.coerce.number().int().positive().max(500).optional(),
   sort: z.enum(['newest', 'price_asc', 'price_desc', 'featured']).optional(),
 }).strict().optional();
 
