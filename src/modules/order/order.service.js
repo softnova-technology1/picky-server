@@ -5,7 +5,6 @@ const CartRepo = require('../cart/cart.repository');
 const Cart = require('../../models/cart.model');
 const Inventory = require('../../models/inventory.model');
 const CheckoutReservation = require('../../models/checkoutReservation.model');
-const CouponUsage = require('../../models/couponUsage.model');
 const Coupon = require('../../models/coupon.model');
 const User = require('../../models/user.model');
 const Product = require('../../models/product.model');
@@ -65,15 +64,89 @@ const triggerOrderNotification = async (order, user, shippingAddress) => {
   }
 };
 
-const calculateCartPricing = async (user, cart) => {
-  const subtotal = cart.items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-  let discountAmount = cart.couponDiscount || 0;
-  let discountType = null;
+const isTamilNaduPincode = (pincodeStr) => {
+  const pin = (pincodeStr || '').toString().trim().replace(/\D/g, '');
+  if (!pin || pin.length < 2) return false;
+  const firstTwo = parseInt(pin.slice(0, 2), 10);
+  return firstTwo >= 60 && firstTwo <= 64;
+};
 
-  // First-order gift check (SILENT — internal only, never expose discountType to customer)
-  if (user.orderCount === 0 && !cart.coupon) {
+const calculateServerOrderPricing = async ({
+  user = null,
+  items = [],
+  couponCode = null,
+  shippingAddress = {},
+  deliveryMode = 'standard',
+  isGiftWrap = false,
+  giftWrapFee = 0,
+}) => {
+  const now = new Date();
+  const verifiedItems = [];
+  let subtotal = 0;
+
+  for (const item of items) {
+    const prodId = item.productId || item.product || item._id || item.id;
+    if (!prodId || !mongoose.isValidObjectId(prodId)) continue;
+
+    const dbProd = await Product.findById(prodId).lean();
+    if (!dbProd) {
+      throw new AppError(`Product not found or unavailable: ${item.name || prodId}`, 400);
+    }
+
+    const qty = Math.max(1, Number(item.quantity) || 1);
+
+    // Validate active discount window directly on server
+    const hasActiveOffer = Boolean(
+      dbProd.isDiscountActive &&
+      dbProd.discountPrice &&
+      dbProd.discountPrice < dbProd.price &&
+      (!dbProd.offerStartDate || new Date(dbProd.offerStartDate) <= now) &&
+      (!dbProd.offerEndDate || new Date(dbProd.offerEndDate) >= now)
+    );
+
+    const unitPrice = hasActiveOffer ? Number(dbProd.discountPrice) : Number(dbProd.price);
+    subtotal += unitPrice * qty;
+
+    verifiedItems.push({
+      product: dbProd._id,
+      name: dbProd.name,
+      image: (dbProd.images && dbProd.images[0]) || item.image || '',
+      price: unitPrice,
+      quantity: qty,
+    });
+  }
+
+  if (verifiedItems.length === 0) {
+    throw new AppError('Order must contain at least one valid product', 400);
+  }
+
+  // 2. Validate and calculate Coupon Discount
+  let discountAmount = 0;
+  let appliedCoupon = null;
+
+  if (couponCode) {
+    const cleanCode = couponCode.toString().trim().toUpperCase();
+    const dbCoupon = await Coupon.findOne({
+      code: cleanCode,
+      isActive: true,
+      $and: [
+        { $or: [{ startsAt: null }, { startsAt: { $lte: now } }] },
+        { $or: [{ endsAt: null }, { endsAt: { $gte: now } }] },
+      ],
+    }).lean();
+
+    if (dbCoupon && subtotal >= (dbCoupon.minOrderAmount || 0)) {
+      appliedCoupon = dbCoupon.code;
+      let calculated = dbCoupon.type === 'percentage'
+        ? Math.round((subtotal * dbCoupon.value) / 100)
+        : dbCoupon.value;
+      if (dbCoupon.maxDiscountAmount) {
+        calculated = Math.min(calculated, dbCoupon.maxDiscountAmount);
+      }
+      discountAmount = Math.min(subtotal, calculated);
+    }
+  } else if (user && user.orderCount === 0) {
     const Discount = require('../../models/discount.model');
-    const now = new Date();
     const firstOrderDiscount = await Discount.findOne({
       appliesTo: 'first_order',
       isActive: true,
@@ -85,21 +158,49 @@ const calculateCartPricing = async (user, cart) => {
 
     if (firstOrderDiscount && subtotal >= (firstOrderDiscount.minOrderAmount || 0)) {
       let fodAmount = firstOrderDiscount.type === 'percentage'
-        ? (subtotal * firstOrderDiscount.value) / 100
+        ? Math.round((subtotal * firstOrderDiscount.value) / 100)
         : firstOrderDiscount.value;
       if (firstOrderDiscount.maxDiscountAmount) {
         fodAmount = Math.min(fodAmount, firstOrderDiscount.maxDiscountAmount);
       }
-      discountAmount = fodAmount;
-      discountType = 'first_order';
+      discountAmount = Math.min(subtotal, fodAmount);
     }
-  } else if (cart.coupon) {
-    discountType = 'coupon';
   }
 
-  const total = Math.max(0, subtotal - discountAmount);
-  return { subtotal, discountAmount, discountType, total };
+  // 3. Shipping fee from live DB settings and pincode
+  let calculatedShippingFee = 0;
+  if (deliveryMode !== 'pickup') {
+    try {
+      const Settings = require('../../models/settings.model');
+      const settings = await Settings.findOne().lean();
+      const shipping = settings?.shipping || {};
+      const tnFee = Number(shipping?.tamilNadu?.shippingFee !== undefined ? shipping.tamilNadu.shippingFee : 50);
+      const allIndiaFee = Number(shipping?.allIndia?.shippingFee !== undefined ? shipping.allIndia.shippingFee : (shipping?.standardShippingFee || 70));
+      calculatedShippingFee = isTamilNaduPincode(shippingAddress?.pincode) ? tnFee : allIndiaFee;
+    } catch (_e) {
+      calculatedShippingFee = isTamilNaduPincode(shippingAddress?.pincode) ? 50 : 70;
+    }
+  }
+
+  // 4. Convenience fee & gift wrap
+  const convenienceFee = 2;
+  const calculatedGiftWrapFee = isGiftWrap ? (Number(giftWrapFee) || 30) : 0;
+
+  // 5. Final Total
+  const finalTotal = Math.max(0, subtotal - discountAmount + calculatedShippingFee + convenienceFee + calculatedGiftWrapFee);
+
+  return {
+    verifiedItems,
+    subtotal,
+    discountAmount,
+    coupon: appliedCoupon,
+    shippingFee: calculatedShippingFee,
+    convenienceFee,
+    giftWrapFee: calculatedGiftWrapFee,
+    total: finalTotal,
+  };
 };
+
 
 const OrderService = {
   /**
@@ -161,7 +262,8 @@ const OrderService = {
       await existing.save();
     }
 
-    // 1. Validate available stock for each item (and auto-init inventory if needed)
+    // 1 & 2. Atomically reserve available stock with automatic rollback on concurrency failure
+    const reservedItems = [];
     for (const item of checkoutItems) {
       let inv = await Inventory.findOne({ product: item.product });
       if (!inv) {
@@ -170,37 +272,42 @@ const OrderService = {
           inv = await Inventory.create({
             product: prod._id,
             sku: prod.sku || `SKU-${Date.now()}`,
-            quantity: prod.stock || 10,
+            quantity: prod.stock || 0,
             reserved: 0,
             sold: 0,
             lowStockThreshold: 5,
           });
         }
       }
-      if (!inv || (inv.quantity || 0) < item.quantity) {
-        const prod = await Product.findById(item.product).select('name').lean();
-        throw new AppError(`"${prod?.name || 'Item'}" has insufficient stock (${inv?.quantity || 0} available).`, 400);
-      }
-    }
 
-    // 2. Decrement Available quantity and increment Reserved stock atomically
-    for (const item of checkoutItems) {
-      await Inventory.findOneAndUpdate(
-        { product: item.product },
-        { $inc: { quantity: -item.quantity, reserved: item.quantity } }
+      // Atomic conditional decrement: only succeeds if current available quantity >= item.quantity
+      const updatedInv = await Inventory.findOneAndUpdate(
+        { product: item.product, quantity: { $gte: item.quantity } },
+        { $inc: { quantity: -item.quantity, reserved: item.quantity } },
+        { new: true }
       );
-      await Inventory.updateOne(
-        { product: item.product, quantity: { $lt: 0 } },
-        { $set: { quantity: 0 } }
-      );
+
+      if (!updatedInv) {
+        // Rollback all items reserved so far in this checkout loop
+        for (const resItem of reservedItems) {
+          await Inventory.findOneAndUpdate(
+            { product: resItem.product },
+            { $inc: { quantity: resItem.quantity, reserved: -resItem.quantity } }
+          );
+          await Product.findByIdAndUpdate(
+            resItem.product,
+            { $inc: { stock: resItem.quantity } }
+          );
+        }
+        const prod = await Product.findById(item.product).select('name').lean();
+        throw new AppError(`"${prod?.name || 'Item'}" has insufficient stock available right now.`, 400);
+      }
+
       await Product.findByIdAndUpdate(
         item.product,
         { $inc: { stock: -item.quantity } }
       );
-      await Product.updateOne(
-        { _id: item.product, stock: { $lt: 0 } },
-        { $set: { stock: 0 } }
-      );
+      reservedItems.push(item);
     }
 
     // 3. Persist reservation document with TTL
@@ -264,49 +371,50 @@ const OrderService = {
   /**
    * 1. Create Razorpay Order instance for Frontend Checkout Modal and Reserve Stock
    */
-  async createRazorpayOrder(user, { shippingAddress, items, total, totalAmount, subtotal, discountAmount, sessionId }) {
-    let cart = await CartRepo.findByUser(user._id);
-    if ((!cart || cart.items.length === 0) && items && items.length > 0) {
-      const CartService = require('../cart/cart.service');
-      await CartService.mergeGuestCart(user._id, items);
-      cart = await CartRepo.findByUser(user._id);
+  async createRazorpayOrder(user, {
+    shippingAddress = {},
+    items = [],
+    coupon,
+    couponCode,
+    deliveryMode = 'standard',
+    giftWrap,
+    giftWrapFee,
+    sessionId,
+  }) {
+    let checkoutItems = items;
+    if ((!checkoutItems || checkoutItems.length === 0) && user?._id) {
+      const cart = await CartRepo.findByUser(user._id);
+      if (cart && cart.items.length > 0) {
+        checkoutItems = cart.items.map((i) => ({
+          productId: i.product,
+          quantity: i.quantity,
+        }));
+      }
     }
 
-    let calculatedTotal = 0;
-    let calculatedSubtotal = 0;
-    let calculatedDiscount = 0;
-
-    if (cart && cart.items.length > 0) {
-      // Validate stock for all items
-      for (const item of cart.items) {
-        const inv = await Inventory.findOne({ product: item.product });
-        if (!inv || inv.quantity < item.quantity) {
-          throw new AppError(`Insufficient stock for "${item.name}"`, 400);
-        }
-      }
-      const pricing = await calculateCartPricing(user, cart);
-      calculatedSubtotal = pricing.subtotal;
-      calculatedDiscount = pricing.discountAmount;
-      calculatedTotal = Number(total || totalAmount) || pricing.total;
-    } else if (items && items.length > 0) {
-      calculatedSubtotal = Number(subtotal) || items.reduce((sum, i) => sum + (Number(i.price) || 0) * (Number(i.quantity) || 1), 0);
-      calculatedDiscount = Number(discountAmount) || 0;
-      calculatedTotal = Number(total || totalAmount) || Math.max(0, calculatedSubtotal - calculatedDiscount);
-    } else if (Number(total || totalAmount) > 0) {
-      calculatedTotal = Number(total || totalAmount);
-      calculatedSubtotal = calculatedTotal;
-    } else {
+    if (!checkoutItems || checkoutItems.length === 0) {
       throw new AppError('Cart is empty', 400);
     }
+
+    const isGift = Boolean(giftWrap?.isGiftWrapped || giftWrap === true);
+    const pricing = await calculateServerOrderPricing({
+      user,
+      items: checkoutItems,
+      couponCode: couponCode || coupon,
+      shippingAddress,
+      deliveryMode,
+      isGiftWrap: isGift,
+      giftWrapFee,
+    });
 
     const receipt = generateOrderNumber();
 
     const rzOrder = await RazorpayService.createOrder({
-      amountInRupees: calculatedTotal,
+      amountInRupees: pricing.total,
       receipt,
       notes: {
-        userId: user._id.toString(),
-        phone: user.phone || '',
+        userId: user?._id ? user._id.toString() : 'guest',
+        phone: user?.phone || shippingAddress?.phone || '',
       },
     });
 
@@ -318,27 +426,26 @@ const OrderService = {
           existingRes.sessionId = rzOrder.id;
           await existingRes.save();
         } else {
-          const itemsToHold = (cart && cart.items.length > 0) ? cart.items : items;
-          await this.reserveCheckout(user, { items: itemsToHold, sessionId: rzOrder.id });
+          await this.reserveCheckout(user, { items: pricing.verifiedItems, sessionId: rzOrder.id });
         }
       } else {
-        const itemsToHold = (cart && cart.items.length > 0) ? cart.items : items;
-        await this.reserveCheckout(user, { items: itemsToHold, sessionId: rzOrder.id });
+        await this.reserveCheckout(user, { items: pricing.verifiedItems, sessionId: rzOrder.id });
       }
     } catch (resErr) {
-      logger.warn(`[CHECKOUT] Auto-reserve warning: ${resErr.message}`);
+      logger.warn(`[CHECKOUT] Auto-reserve notice: ${resErr.message}`);
     }
 
     return {
       razorpayOrderId: rzOrder.id,
-      amount: rzOrder.amount, // in paise
+      amount: rzOrder.amount,
+      amountInRupees: pricing.total,
       currency: rzOrder.currency,
-      keyId: rzOrder.keyId,
-      subtotal: calculatedSubtotal,
-      discountAmount: calculatedDiscount,
-      total: calculatedTotal,
+      keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_TUoIIdQyUdDIxE',
+      orderNumber: receipt,
+      pricing,
     };
   },
+
 
   /**
    * 2. Verify Razorpay Payment Signature and Create Order in DB
@@ -357,17 +464,12 @@ const OrderService = {
     razorpayPaymentId,
     razorpaySignature,
     items,
-    subtotal,
-    discountAmount,
-    shippingFee,
-    deliveryFee,
-    convenienceFee,
-    giftWrap,
-    giftWrapFee,
-    total,
-    totalAmount,
+    coupon,
+    couponCode,
     courier,
     deliveryMode,
+    giftWrap,
+    giftWrapFee,
     sessionId,
     isBuyNow = false,
     fromCart = false,
@@ -400,67 +502,54 @@ const OrderService = {
       return existingOrder;
     }
 
-    // Direct items fallback if DB cart is empty
-    if (!cart || cart.items.length === 0) {
-      if (!items || items.length === 0) throw new AppError('Cart is empty', 400);
-
-      const calculatedSubtotal = Number(subtotal) || items.reduce((sum, i) => sum + (Number(i.price) || 0) * (Number(i.quantity) || 1), 0);
-      const calculatedDiscount = Number(discountAmount) || 0;
-      const finalTotal = Number(total || totalAmount) || Math.max(0, calculatedSubtotal - calculatedDiscount);
-
-      let calculatedShipping = Number(shippingFee !== undefined && shippingFee !== null ? shippingFee : deliveryFee);
-      let calculatedConvenience = Number(convenienceFee) || 0;
-      if ((isNaN(calculatedShipping) || calculatedShipping === 0) && finalTotal > (calculatedSubtotal - calculatedDiscount)) {
-        const diff = finalTotal - (calculatedSubtotal - calculatedDiscount);
-        calculatedShipping = Math.max(0, diff - (calculatedConvenience || 0) - (calculatedGiftWrapFee || 0));
-      }
-      if (isNaN(calculatedShipping)) calculatedShipping = 0;
-
-      const formattedItems = await Promise.all(items.map(async (i) => {
-        let prodId = i.productId || i.product || i._id || i.id;
-        if (prodId && !mongoose.isValidObjectId(prodId)) prodId = null;
-        let itemImg = i.image || (Array.isArray(i.images) ? i.images[0] : null) || '';
-        if (typeof itemImg === 'string' && itemImg.startsWith('data:image/')) {
-          itemImg = '';
-        }
-        if (!itemImg && prodId) {
-          const dbProd = await Product.findById(prodId).select('images').lean();
-          itemImg = (dbProd && dbProd.images && dbProd.images[0]) || '';
-        }
-        return {
-          product: prodId,
-          name: i.name || 'Product Item',
-          image: itemImg,
-          price: Number(i.price) || 0,
-          quantity: Number(i.quantity) || 1,
-        };
+    // Authoritative Server-side Price & Order Calculation
+    let itemsToProcess = items;
+    if ((!itemsToProcess || itemsToProcess.length === 0) && cart && cart.items.length > 0) {
+      itemsToProcess = cart.items.map((i) => ({
+        productId: i.product,
+        quantity: i.quantity,
       }));
+    }
 
-      const order = await Order.create({
-        orderNumber: generateOrderNumber(),
-        user: user._id,
-        items: formattedItems,
-        shippingAddress,
-        subtotal: calculatedSubtotal,
-        discountAmount: calculatedDiscount,
-        shippingFee: calculatedShipping,
-        convenienceFee: calculatedConvenience,
-        giftWrapFee: calculatedGiftWrapFee,
-        giftWrap: {
-          isGiftWrapped: isGift,
-          fee: calculatedGiftWrapFee,
-          message: giftMessage,
-        },
-        total: finalTotal,
-        paymentMethod: 'razorpay',
-        paymentStatus: 'paid',
-        razorpayOrderId,
-        razorpayPaymentId,
-        razorpaySignature,
-        courier: courier || (deliveryMode === 'pickup' ? 'Self Store Pickup' : 'Standard Surface Delivery'),
-        status: 'confirmed',
-        statusHistory: [{ status: 'confirmed', note: 'Prepaid via Razorpay (Online)', timestamp: new Date() }],
-      });
+    if (!itemsToProcess || itemsToProcess.length === 0) {
+      throw new AppError('Order must contain at least one valid item', 400);
+    }
+
+    const pricing = await calculateServerOrderPricing({
+      user,
+      items: itemsToProcess,
+      couponCode: couponCode || coupon || cart?.coupon,
+      shippingAddress,
+      deliveryMode,
+      isGiftWrap: isGift,
+      giftWrapFee: calculatedGiftWrapFee,
+    });
+
+    const order = await Order.create({
+      orderNumber: generateOrderNumber(),
+      user: user?._id || null,
+      items: pricing.verifiedItems,
+      shippingAddress,
+      subtotal: pricing.subtotal,
+      discountAmount: pricing.discountAmount,
+      shippingFee: pricing.shippingFee,
+      convenienceFee: pricing.convenienceFee,
+      giftWrapFee: pricing.giftWrapFee,
+      giftWrap: {
+        isGiftWrapped: isGift,
+        fee: pricing.giftWrapFee,
+        message: giftMessage,
+      },
+      total: pricing.total,
+      paymentMethod: 'razorpay',
+      paymentStatus: 'paid',
+      razorpayOrderId,
+      razorpayPaymentId,
+      razorpaySignature,
+      courier: courier || (deliveryMode === 'pickup' ? 'Self Store Pickup' : ''),
+      status: 'confirmed',
+      statusHistory: [{ status: 'confirmed', note: 'Prepaid via Razorpay (Online)', timestamp: new Date() }],
+    });
 
       triggerOrderNotification(order, user, shippingAddress);
 
@@ -489,7 +578,7 @@ const OrderService = {
         logger.info(`[ORDER] Pre-reserved items moved to SOLD for session: ${activeRes.sessionId}`);
       } else {
         // Fallback: Deduct available quantity and increment SOLD
-        for (const item of formattedItems) {
+        for (const item of pricing.verifiedItems) {
           if (item.product) {
             try {
               await Inventory.findOneAndUpdate(
@@ -517,200 +606,21 @@ const OrderService = {
         }
       }
 
-      await User.findByIdAndUpdate(user._id, { $inc: { orderCount: 1 } });
-      NotificationService.sendOrderConfirmed(user.phone, user.name || 'Customer', order.orderNumber, order.total)
-        .catch((err) => logger.error(`[WATI] Order confirmed notification failed: ${err.message}`));
+      if (user?._id) {
+        await User.findByIdAndUpdate(user._id, { $inc: { orderCount: 1 } });
+        if (!isBuyNow || fromCart) {
+          await Cart.findOneAndUpdate({ user: user._id }, { items: [], coupon: null, couponDiscount: 0 });
+        }
+      }
+
+      NotificationService.sendOrderConfirmed(
+        user?.phone || shippingAddress?.phone,
+        user?.name || shippingAddress?.fullName || 'Customer',
+        order.orderNumber,
+        order.total
+      ).catch((err) => logger.error(`[WATI] Order confirmed notification failed: ${err.message}`));
 
       return order;
-    }
-
-    const { subtotal: cartSubtotal, discountAmount: cartDiscount, discountType, total: cartTotal } = await calculateCartPricing(user, cart);
-
-    // ─── Start MongoDB Transaction (audit fix #1) ─────────────────────────────
-    const session = await mongoose.startSession();
-    session.startTransaction();
-    let order;
-    try {
-      // Step 1: Move pre-reserved items to SOLD or deduct directly if unreserved
-      const activeTxRes = await CheckoutReservation.findOne({
-        $or: [
-          ...(razorpayOrderId ? [{ sessionId: razorpayOrderId }] : []),
-          ...(sessionId ? [{ sessionId }] : []),
-          ...(user?._id ? [{ user: user._id, status: 'reserved' }] : []),
-        ],
-        status: 'reserved',
-      }).session(session);
-      if (activeTxRes) {
-        activeTxRes.status = 'completed';
-        await activeTxRes.save({ session });
-        for (const item of activeTxRes.items) {
-          await Inventory.findOneAndUpdate(
-            { product: item.product },
-            { $inc: { reserved: -item.quantity, sold: item.quantity } },
-            { session }
-          );
-          await Inventory.updateOne(
-            { product: item.product, reserved: { $lt: 0 } },
-            { $set: { reserved: 0 } },
-            { session }
-          );
-        }
-      } else {
-        for (const item of cart.items) {
-          const updatedInv = await Inventory.findOneAndUpdate(
-            { product: item.product, quantity: { $gte: item.quantity } },
-            { $inc: { quantity: -item.quantity, sold: item.quantity } },
-            { session, new: true }
-          );
-          if (!updatedInv) {
-            throw new AppError(`"${item.name}" is now out of stock. Your payment was not debited.`, 400);
-          }
-          await Product.findByIdAndUpdate(
-            item.product,
-            { $inc: { stock: -item.quantity } },
-            { session, new: true }
-          );
-          await Product.updateOne(
-            { _id: item.product, stock: { $lt: 0 } },
-            { $set: { stock: 0 } },
-            { session }
-          );
-        }
-      }
-
-      // Step 2: Create the Order document
-      const [created] = await Order.create(
-        [
-          {
-            orderNumber: generateOrderNumber(),
-            user: user._id,
-            items: cart.items.map((i) => ({
-              product: i.product,
-              name: i.name,
-              image: (typeof i.image === 'string' && i.image.startsWith('data:image/')) ? '' : (i.image || ''),
-              price: i.price,
-              quantity: i.quantity,
-            })),
-            shippingAddress,
-            subtotal,
-            discountAmount,
-            shippingFee: Number(shippingFee !== undefined && shippingFee !== null ? shippingFee : deliveryFee) || (Number(total) > (Number(subtotal) - Number(discountAmount || 0)) ? Math.max(0, Number(total) - (Number(subtotal) - Number(discountAmount || 0)) - (Number(convenienceFee) || 0) - (calculatedGiftWrapFee || 0)) : 0),
-            convenienceFee: Number(convenienceFee) || 0,
-            giftWrapFee: calculatedGiftWrapFee,
-            giftWrap: {
-              isGiftWrapped: isGift,
-              fee: calculatedGiftWrapFee,
-              message: giftMessage,
-            },
-            total,
-            paymentMethod: 'razorpay',
-            paymentStatus: 'paid',
-            razorpayOrderId,
-            razorpayPaymentId,
-            razorpaySignature,
-            courier: courier || (deliveryMode === 'pickup' ? 'Self Store Pickup' : 'Standard Surface Delivery'),
-            coupon: cart.coupon || null,
-            discountType,
-            status: 'confirmed',
-            statusHistory: [{ status: 'confirmed', note: 'Prepaid via Razorpay (Online)', timestamp: new Date() }],
-          },
-        ],
-        { session }
-      );
-      order = created;
-
-      // Step 3: Record coupon usage + increment coupon counter
-      if (cart.coupon) {
-        await CouponUsage.create(
-          [{ coupon: cart.coupon, user: user._id, order: order._id }],
-          { session }
-        );
-        await Coupon.findByIdAndUpdate(
-          cart.coupon,
-          { $inc: { usageCount: 1 } },
-          { session }
-        );
-      }
-
-      // Step 4: Increment user's order count
-      await User.findByIdAndUpdate(
-        user._id,
-        { $inc: { orderCount: 1 } },
-        { session }
-      );
-
-      // Step 5: Clear cart or remove purchased items (inside transaction for full rollback safety)
-      const orderedProductIds = (items && items.length > 0 ? items : (cart?.items || []))
-        .map((i) => (i.productId || i.product || i._id || i.id)?.toString())
-        .filter(Boolean);
-
-      if (isBuyNow) {
-        if (fromCart) {
-          // Express checkout of a single item that was in the customer's cart
-          await Cart.findOneAndUpdate(
-            { user: user._id },
-            { $pull: { items: { product: { $in: orderedProductIds } } } },
-            { session }
-          );
-        }
-        // If !fromCart (direct Buy Now from Product Details page): DO NOT touch active/abandoned cart in DB!
-      } else {
-        // Full or partial cart checkout
-        if (items && items.length > 0 && cart && cart.items && cart.items.length > items.length) {
-          await Cart.findOneAndUpdate(
-            { user: user._id },
-            { $pull: { items: { product: { $in: orderedProductIds } } } },
-            { session }
-          );
-        } else {
-          await Cart.findOneAndUpdate(
-            { user: user._id },
-            { items: [], coupon: null, couponDiscount: 0 },
-            { session }
-          );
-        }
-      }
-
-      await session.commitTransaction();
-      logger.info(`[ORDER] ✅ Order ${order.orderNumber} committed successfully`);
-
-      // Auto-sync with Abandoned Cart Recovery (ONLY if paid AND items match cart items)
-      if (order.paymentStatus === 'paid' && (!isBuyNow || fromCart) && cart?._id) {
-        try {
-          const cartProductIds = (cart.items || []).map((i) => (i.product?._id || i.product || i._id)?.toString()).filter(Boolean);
-          const convertedFromCart = (order.items || []).filter((i) => {
-            const pId = (i.product?._id || i.product || i._id)?.toString();
-            return cartProductIds.includes(pId) || (cart.items || []).some((ci) => ci.name === i.name || (ci.sku && ci.sku === i.sku));
-          });
-
-          if (convertedFromCart.length > 0) {
-            const CartService = require('../cart/cart.service');
-            await CartService.markCartRecovered(cart._id, {
-              orderNumber: order.orderNumber,
-              convertedItems: convertedFromCart,
-              wonBackAmount: convertedFromCart.reduce((sum, i) => sum + ((i.price || 0) * (i.quantity || 1)), 0),
-            });
-          }
-        } catch (recErr) {
-          logger.warn(`[RECOVERY_SYNC] Failed auto-sync: ${recErr.message}`);
-        }
-      }
-    } catch (err) {
-      await session.abortTransaction();
-      logger.error(`[ORDER] ❌ Transaction aborted for razorpayOrderId ${razorpayOrderId}: ${err.message}`);
-      throw err;
-    } finally {
-      session.endSession();
-    }
-    // ─── End Transaction ──────────────────────────────────────────────────────
-
-    // Send WhatsApp notification asynchronously (outside transaction — non-blocking)
-    NotificationService.sendOrderConfirmed(user.phone, user.name || 'Customer', order.orderNumber, total)
-      .catch((err) => logger.error(`[WATI] Order confirmed notification failed: ${err.message}`));
-
-    triggerOrderNotification(order, user, shippingAddress);
-
-    return order;
   },
 
   /**
@@ -719,17 +629,10 @@ const OrderService = {
   async createOrder(user, {
     items = [],
     shippingAddress = {},
-    subtotal,
-    discountAmount = 0,
-    shippingFee = 0,
-    deliveryFee,
-    convenienceFee = 0,
     giftWrap,
     giftWrapFee,
-    total,
-    totalAmount,
-    paymentMethod = 'card',
-    paymentStatus = 'paid',
+    paymentMethod = 'razorpay',
+    paymentStatus = 'pending',
     razorpayPaymentId = null,
     razorpayOrderId = null,
     sessionId = null,
@@ -745,49 +648,35 @@ const OrderService = {
       throw new AppError('Full shipping address (street, city, state, pincode) is required', 400);
     }
 
-    const calculatedSubtotal = Number(subtotal) || items.reduce((sum, i) => sum + (Number(i.price) || 0) * (Number(i.quantity) || 1), 0);
-    const calculatedDiscount = Number(discountAmount) || 0;
+    // Security: Block direct forging of 'paid' orders in production without payment verification
+    let resolvedPaymentStatus = 'pending';
+    if (process.env.NODE_ENV === 'production') {
+      if (paymentStatus === 'paid' && !razorpayPaymentId) {
+        throw new AppError('Direct creation of paid orders without gateway verification is forbidden', 403);
+      }
+      resolvedPaymentStatus = razorpayPaymentId ? 'paid' : 'pending';
+    } else {
+      resolvedPaymentStatus = paymentStatus === 'paid' ? 'paid' : 'pending';
+    }
+
     const isGift = Boolean(giftWrap?.isGiftWrapped || giftWrap === true);
-    const calculatedGiftWrapFee = isGift ? (Number(giftWrap?.fee !== undefined ? giftWrap.fee : giftWrapFee) || 0) : 0;
     const giftMessage = isGift ? (giftWrap?.message || '').trim() : '';
 
-    let calculatedShipping = Number(shippingFee !== undefined && shippingFee !== null && shippingFee !== 0 ? shippingFee : deliveryFee);
-    let calculatedConvenience = Number(convenienceFee) || 0;
-    const finalTotal = Number(total || totalAmount) || Math.max(0, calculatedSubtotal - calculatedDiscount + (calculatedShipping || 0) + calculatedConvenience + calculatedGiftWrapFee);
-    if ((isNaN(calculatedShipping) || calculatedShipping === 0) && finalTotal > (calculatedSubtotal - calculatedDiscount)) {
-      const diff = finalTotal - (calculatedSubtotal - calculatedDiscount);
-      calculatedShipping = Math.max(0, diff - calculatedConvenience - calculatedGiftWrapFee);
-    }
-    if (isNaN(calculatedShipping)) calculatedShipping = 0;
+    const pricing = await calculateServerOrderPricing({
+      user,
+      items,
+      shippingAddress,
+      deliveryMode,
+      isGiftWrap: isGift,
+      giftWrapFee,
+    });
 
-    // Format items snapshot
-    const formattedItems = await Promise.all(items.map(async (i) => {
-      let prodId = i.productId || i.product || i._id || i.id;
-      if (prodId && !mongoose.isValidObjectId(prodId)) {
-        prodId = null;
-      }
-      let itemImg = i.image || (Array.isArray(i.images) ? i.images[0] : null) || '';
-      if (typeof itemImg === 'string' && itemImg.startsWith('data:image/')) {
-        itemImg = '';
-      }
-      if (!itemImg && prodId) {
-        const dbProd = await Product.findById(prodId).select('images').lean();
-        itemImg = (dbProd && dbProd.images && dbProd.images[0]) || '';
-      }
-      return {
-        product: prodId,
-        name: i.name || 'Product Item',
-        image: itemImg,
-        price: Number(i.price) || 0,
-        quantity: Number(i.quantity) || 1,
-      };
-    }));
-
+    const formattedItems = pricing.verifiedItems;
     const orderNumber = generateOrderNumber();
 
     const order = await Order.create({
       orderNumber,
-      user: user._id,
+      user: user?._id || null,
       items: formattedItems,
       shippingAddress: {
         street: shippingAddress.street,
@@ -795,25 +684,27 @@ const OrderService = {
         state: shippingAddress.state,
         pincode: shippingAddress.pincode,
         landmark: shippingAddress.landmark || '',
+        fullName: shippingAddress.fullName || '',
+        phone: shippingAddress.phone || '',
       },
-      subtotal: calculatedSubtotal,
-      discountAmount: calculatedDiscount,
-      shippingFee: calculatedShipping,
-      convenienceFee: calculatedConvenience,
-      giftWrapFee: calculatedGiftWrapFee,
+      subtotal: pricing.subtotal,
+      discountAmount: pricing.discountAmount,
+      shippingFee: pricing.shippingFee,
+      convenienceFee: pricing.convenienceFee,
+      giftWrapFee: pricing.giftWrapFee,
       giftWrap: {
         isGiftWrapped: isGift,
-        fee: calculatedGiftWrapFee,
+        fee: pricing.giftWrapFee,
         message: giftMessage,
       },
-      total: finalTotal,
+      total: pricing.total,
       paymentMethod,
-      paymentStatus: paymentStatus || 'paid',
+      paymentStatus: resolvedPaymentStatus,
       razorpayPaymentId,
       razorpayOrderId,
-      status: 'confirmed',
-      statusHistory: [{ status: 'confirmed', note: `Order placed via ${paymentMethod}`, timestamp: new Date() }],
-      courier: courier || (deliveryMode === 'pickup' ? 'Self Store Pickup' : 'Standard Surface Delivery'),
+      status: resolvedPaymentStatus === 'paid' ? 'confirmed' : 'pending',
+      statusHistory: [{ status: resolvedPaymentStatus === 'paid' ? 'confirmed' : 'pending', note: `Order placed via ${paymentMethod}`, timestamp: new Date() }],
+      courier: courier || (deliveryMode === 'pickup' ? 'Self Store Pickup' : ''),
     });
 
     triggerOrderNotification(order, user, shippingAddress);
@@ -872,8 +763,20 @@ const OrderService = {
       }
     }
 
-    // Increment user orderCount
-    await User.findByIdAndUpdate(user._id, { $inc: { orderCount: 1 } });
+    // Increment user orderCount & sync phone to profile if user has no phone linked
+    const userUpdate = { $inc: { orderCount: 1 } };
+    const orderPhone = (shippingAddress?.phone || '').toString().replace(/\D/g, '').slice(-10);
+    if (orderPhone && orderPhone.length === 10) {
+      try {
+        const freshUser = await User.findById(user._id).select('phone');
+        if (freshUser && (!freshUser.phone || !freshUser.phone.trim())) {
+          userUpdate.phone = orderPhone;
+        }
+      } catch (phoneSyncErr) {
+        logger.warn(`[ORDER] Non-critical phone sync notice: ${phoneSyncErr.message}`);
+      }
+    }
+    await User.findByIdAndUpdate(user._id, userUpdate);
 
     // Clear cart or remove ordered items (ONLY for cart checkouts or single items from cart, NEVER direct Buy Now!)
     try {
@@ -952,7 +855,7 @@ const OrderService = {
       user.phone || shippingAddress.phone,
       user.name || shippingAddress.fullName || 'Customer',
       order.orderNumber,
-      finalTotal
+      order.total
     ).catch((err) => logger.warn(`[NOTIFICATION] Order notification failed: ${err.message}`));
 
     return order;
@@ -971,8 +874,18 @@ const OrderService = {
       throw new AppError('Invalid webhook signature', 400);
     }
 
-    const event = JSON.parse(rawBody);
-    logger.info(`[WEBHOOK] Razorpay event received: ${event.event}`);
+    let event;
+    try {
+      if (typeof rawBody === 'object' && !Buffer.isBuffer(rawBody)) {
+        event = rawBody;
+      } else {
+        const bodyStr = Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : String(rawBody);
+        event = JSON.parse(bodyStr);
+      }
+    } catch (_e) {
+      throw new AppError('Malformed webhook payload JSON', 400);
+    }
+    logger.info(`[WEBHOOK] Razorpay event received: ${event?.event}`);
 
     if (event.event === 'payment.captured') {
       const payment = event.payload?.payment?.entity;
@@ -1103,6 +1016,22 @@ const OrderService = {
     if (!mongoose.isValidObjectId(orderId)) throw new AppError('Invalid order ID', 400);
     const existing = await OrderRepo.findById(orderId);
     if (!existing) throw new AppError('Order not found', 404);
+    // Status lifecycle protection: Disallow backward transitions
+    if (existing.status === 'delivered' && status !== 'delivered') {
+      throw new AppError('Delivered orders are completed and cannot be modified.', 400);
+    }
+    if (existing.status === 'cancelled' && status !== 'cancelled') {
+      throw new AppError('Cancelled orders cannot be reopened.', 400);
+    }
+    if (existing.status === 'shipped' && status === 'confirmed') {
+      throw new AppError('Shipped orders cannot be reverted back to confirmed.', 400);
+    }
+
+    if (status === 'shipped') {
+      if (!courier?.trim() || !courierUrl?.trim() || !trackingId?.trim()) {
+        throw new AppError('Courier Name, Courier Site URL, and Tracking / AWB Number are required to ship this order.', 400);
+      }
+    }
 
     // If status transitions from confirmed/processing to shipped, delivered, or out_for_delivery:
     // Move from reserved to sold!

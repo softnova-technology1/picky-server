@@ -82,6 +82,110 @@ const AuthService = {
     };
   },
 
+  // Customer Google OAuth Authentication
+  async googleLogin({ idToken, accessToken }) {
+    let email, name, picture, googleId;
+
+    if (idToken) {
+      try {
+        const { OAuth2Client } = require('google-auth-library');
+        const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+        const ticket = await client.verifyIdToken({
+          idToken,
+          audience: process.env.GOOGLE_CLIENT_ID ? [process.env.GOOGLE_CLIENT_ID] : undefined,
+        });
+        const payload = ticket.getPayload();
+        email = payload.email;
+        name = payload.name;
+        picture = payload.picture;
+        googleId = payload.sub;
+      } catch (tokenErr) {
+        // Fallback: If verification by client library fails due to audience or token format, try Google tokeninfo endpoint
+        const axios = require('axios');
+        const res = await axios.get(`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`);
+        email = res.data.email;
+        name = res.data.name;
+        picture = res.data.picture;
+        googleId = res.data.sub;
+      }
+    } else if (accessToken) {
+      const axios = require('axios');
+      const res = await axios.get('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      email = res.data.email;
+      name = res.data.name;
+      picture = res.data.picture;
+      googleId = res.data.sub;
+    } else {
+      throw new AppError('Google authentication token is required', 400);
+    }
+
+    if (!email) {
+      throw new AppError('Unable to retrieve email from Google account', 400);
+    }
+
+    let user = await User.findOne({
+      $or: [{ googleId }, { email: email.toLowerCase().trim() }],
+    });
+
+    if (!user) {
+      user = await User.create({
+        name: name || 'Google User',
+        email: email.toLowerCase().trim(),
+        avatar: picture || '',
+        googleId,
+        role: 'customer',
+      });
+      try {
+        const AdminNotificationService = require('../../services/adminNotification.service');
+        AdminNotificationService.notifyNewCustomer(user);
+      } catch {}
+    } else {
+      // Update missing fields if available
+      let changed = false;
+      if (!user.googleId && googleId) {
+        user.googleId = googleId;
+        changed = true;
+      }
+      if (!user.avatar && picture) {
+        user.avatar = picture;
+        changed = true;
+      }
+      if (!user.name && name) {
+        user.name = name;
+        changed = true;
+      }
+      if (changed) await user.save();
+    }
+
+    if (user.isActive === false) {
+      throw new AppError('Your account has been deactivated. Please contact support.', 403);
+    }
+
+    const tokens = signTokens(user._id.toString());
+    await redis.set(
+      `refresh:${user._id}`,
+      tokens.refreshToken,
+      'EX',
+      15 * 24 * 60 * 60
+    );
+
+    return {
+      ...tokens,
+      user: {
+        id: user._id,
+        phone: user.phone,
+        name: user.name,
+        email: user.email,
+        avatar: user.avatar,
+        role: user.role,
+        defaultAddress: user.defaultAddress,
+        addresses: user.addresses || [],
+      },
+    };
+  },
+
   // Admin Direct Email & Encrypted Password Authentication
   async adminLogin(email, password) {
     if (!email || !password) {
@@ -161,10 +265,54 @@ const AuthService = {
     await redis.del(`refresh:${userId.toString()}`); // ensure string key for Redis
   },
 
-  async updateProfile(userId, { name, email, dob, dateOfBirth, defaultAddress, addresses }) {
+  async getMe(userId, fallbackUser) {
+    if (!userId) return fallbackUser;
+    let user = await User.findById(userId).select('-password -__v').lean();
+    if (!user) return fallbackUser;
+
+    // Auto-link phone from defaultAddress, addresses or latest Order if phone slot is empty
+    if (!user.phone || !user.phone.trim()) {
+      try {
+        let phoneCandidate = '';
+        if (user.defaultAddress?.phone) {
+          phoneCandidate = user.defaultAddress.phone;
+        } else if (Array.isArray(user.addresses) && user.addresses.length > 0) {
+          const withPhone = user.addresses.find((a) => a.phone);
+          if (withPhone) phoneCandidate = withPhone.phone;
+        }
+
+        if (!phoneCandidate) {
+          const Order = require('../../models/order.model');
+          const lastOrder = await Order.findOne({ user: user._id, 'shippingAddress.phone': { $exists: true, $ne: '' } })
+            .sort({ createdAt: -1 })
+            .select('shippingAddress.phone')
+            .lean();
+          if (lastOrder?.shippingAddress?.phone) {
+            phoneCandidate = lastOrder.shippingAddress.phone;
+          }
+        }
+
+        const cleanPhone = (phoneCandidate || '').toString().replace(/\D/g, '').slice(-10);
+        if (cleanPhone && cleanPhone.length === 10) {
+          await User.findByIdAndUpdate(user._id, { $set: { phone: cleanPhone } });
+          user.phone = cleanPhone;
+        }
+      } catch (syncErr) {
+        // Non-critical auto-link fallback
+      }
+    }
+
+    return user;
+  },
+
+  async updateProfile(userId, { name, email, phone, dob, dateOfBirth, defaultAddress, addresses }) {
     const update = {};
     if (name !== undefined) update.name = name.trim();
     if (email !== undefined) update.email = email.toLowerCase().trim();
+    if (phone !== undefined && phone !== null) {
+      const cleanPhone = phone.toString().replace(/\D/g, '').slice(-10);
+      if (cleanPhone) update.phone = cleanPhone;
+    }
     const dobVal = dob !== undefined ? dob : dateOfBirth;
     if (dobVal !== undefined && dobVal !== null) update.dob = typeof dobVal === 'string' ? dobVal.trim() : dobVal;
     if (defaultAddress !== undefined) update.defaultAddress = defaultAddress;
@@ -188,9 +336,16 @@ const AuthService = {
     const hasAddresses = Array.isArray(user.addresses) && user.addresses.length > 0;
     const shouldBeDefault = Boolean(addressData.isDefault || !hasAddresses);
 
+    const cleanAddressPhone = (addressData.phone || '').toString().replace(/\D/g, '').slice(-10);
+
+    // If customer has no linked phone number (e.g. signed in via Google OAuth), link phone from delivery address
+    if ((!user.phone || !user.phone.trim()) && cleanAddressPhone && cleanAddressPhone.length === 10) {
+      user.phone = cleanAddressPhone;
+    }
+
     const newAddress = {
       fullName: (addressData.fullName || user.name || '').trim(),
-      phone: (addressData.phone || user.phone || '').trim(),
+      phone: (cleanAddressPhone || user.phone || addressData.phone || '').trim(),
       email: (addressData.email || user.email || '').trim(),
       street: (addressData.street || '').trim(),
       city: (addressData.city || '').trim(),
@@ -217,6 +372,17 @@ const AuthService = {
     await user.save();
 
     return {
+      user: {
+        id: user._id,
+        phone: user.phone,
+        name: user.name,
+        email: user.email,
+        avatar: user.avatar,
+        role: user.role,
+        defaultAddress: user.defaultAddress,
+        addresses: user.addresses || [],
+      },
+      phone: user.phone,
       addresses: user.addresses,
       defaultAddress: user.defaultAddress,
       addedAddress: user.addresses[user.addresses.length - 1],
