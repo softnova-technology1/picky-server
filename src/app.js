@@ -8,6 +8,7 @@ const correlationId = require('./middleware/correlationId.middleware');
 const AppError = require('./utils/appError');
 const { ApiResponse } = require('./utils/apiResponse');
 const logger = require('./utils/logger');
+const mongoose = require('mongoose');
 
 // ─── Route imports ──────────────────────────────────────────────────────────
 const authRoutes = require('./modules/auth/auth.routes');
@@ -46,7 +47,15 @@ app.use(apiLimiter);
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // ─── Request Parsing ─────────────────────────────────────────────────────────
-app.use(express.json({ limit: '50mb' })); // Increased limit for base64 images during migration/upload
+// Capture rawBody for cryptographic signature verification (e.g. Razorpay webhook HMAC)
+app.use(express.json({
+  limit: '50mb',
+  verify: (req, res, buf) => {
+    if (req.originalUrl && req.originalUrl.includes('/razorpay/webhook')) {
+      req.rawBody = buf;
+    }
+  },
+}));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // audit fix #10: attach unique X-Request-ID to every request for log tracing
 app.use(correlationId);
@@ -60,9 +69,17 @@ if (process.env.NODE_ENV !== 'production') {
   }));
 }
 
-// ─── Health Check ────────────────────────────────────────────────────────────
+// ─── Health Check with Database Readiness ──────────────────────────────────
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', env: process.env.NODE_ENV, timestamp: new Date().toISOString() });
+  const isDbReady = mongoose.connection.readyState === 1;
+  const status = isDbReady ? 'ok' : 'degraded';
+  const statusCode = isDbReady ? 200 : 503;
+  res.status(statusCode).json({
+    status,
+    database: isDbReady ? 'connected' : 'disconnected',
+    env: process.env.NODE_ENV,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // ─── API Routes ───────────────────────────────────────────────────────────────

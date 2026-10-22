@@ -70,7 +70,7 @@ const RazorpayService = {
    * skipped real signature verification in production (Razorpay always uses 'order_' prefix)
    */
   verifyPaymentSignature({ razorpayOrderId, razorpayPaymentId, razorpaySignature }) {
-    if (!razorpayOrderId || !razorpayPaymentId) return false;
+    if (!razorpayOrderId || !razorpayPaymentId || !razorpaySignature) return false;
 
     // Only bypass in dev mode with mock credentials
     if (!isLiveKey) {
@@ -78,30 +78,39 @@ const RazorpayService = {
       return true;
     }
 
-    // Production — always verify HMAC SHA256 signature
+    if (!key_secret) return false;
+
+    // Production — always verify HMAC SHA256 signature using timing-safe comparison
     const body = `${razorpayOrderId}|${razorpayPaymentId}`;
     const expectedSignature = crypto
       .createHmac('sha256', key_secret)
       .update(body)
       .digest('hex');
 
-    return expectedSignature === razorpaySignature;
+    const expectedBuf = Buffer.from(expectedSignature, 'utf8');
+    const sigBuf = Buffer.from(razorpaySignature, 'utf8');
+    if (expectedBuf.length !== sigBuf.length) return false;
+    return crypto.timingSafeEqual(expectedBuf, sigBuf);
   },
 
   /**
-   * Verifies Razorpay webhook signature (audit fix #2)
+   * Verifies Razorpay webhook signature
    * Used in POST /orders/razorpay/webhook to confirm payload is from Razorpay
    */
   verifyWebhookSignature(rawBody, signature) {
-    if (!webhook_secret) {
-      logger.warn('[RAZORPAY WEBHOOK] RAZORPAY_WEBHOOK_SECRET not set — skipping verification in dev');
-      return true;
+    if (!webhook_secret || !signature || !rawBody) {
+      logger.warn('[RAZORPAY WEBHOOK] Verification rejected: missing secret, signature, or body');
+      return false;
     }
     const expected = crypto
       .createHmac('sha256', webhook_secret)
       .update(rawBody)
       .digest('hex');
-    return expected === signature;
+
+    const expectedBuf = Buffer.from(expected, 'utf8');
+    const sigBuf = Buffer.from(signature, 'utf8');
+    if (expectedBuf.length !== sigBuf.length) return false;
+    return crypto.timingSafeEqual(expectedBuf, sigBuf);
   },
 };
 
