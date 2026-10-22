@@ -27,6 +27,7 @@ const contactInquirySchema = new mongoose.Schema(
     },
     file: {
       url: { type: String, default: '' },
+      key: { type: String, default: '' },
       originalName: { type: String, default: '' },
       mimeType: { type: String, default: '' },
       size: { type: Number, default: 0 },

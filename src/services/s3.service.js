@@ -129,11 +129,106 @@ const uploadImage = async (buffer, folder = 'products', contentType = 'image/web
 };
 
 /**
+ * Upload any file (documents, pdf, doc, images, etc.) directly to AWS S3 bucket
+ * @param {Buffer} buffer - file buffer from Multer
+ * @param {string} folder - target folder, e.g. 'inquiries'
+ * @param {string} originalName - original filename to extract clean extension
+ * @param {string} mimeType - content MIME type
+ * @returns {Promise<{url: string, key: string}>}
+ */
+const uploadFile = async (
+  buffer,
+  folder = 'inquiries',
+  originalName = '',
+  mimeType = 'application/octet-stream'
+) => {
+  const fileHash = crypto.randomBytes(8).toString('hex');
+  const timestamp = Date.now();
+
+  // Normalize folder to avoid duplicate "picky/picky/..." prefixes
+  const cleanFolder = (folder || 'inquiries')
+    .toString()
+    .replace(/^picky\/?/i, '')
+    .replace(/^\/+|\/+$/g, '') || 'inquiries';
+
+  // Determine file extension
+  let ext = '';
+  if (originalName) {
+    ext = path.extname(originalName).toLowerCase();
+  }
+  if (!ext) {
+    const mimeToExt = {
+      'image/jpeg': '.jpg',
+      'image/jpg': '.jpg',
+      'image/png': '.png',
+      'image/webp': '.webp',
+      'image/gif': '.gif',
+      'image/svg+xml': '.svg',
+      'application/pdf': '.pdf',
+      'application/msword': '.doc',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+      'text/plain': '.txt',
+    };
+    ext = mimeToExt[mimeType] || '';
+  }
+
+  const key = `picky/${cleanFolder}/${timestamp}-${fileHash}${ext}`;
+  const client = getS3Client();
+
+  if (client && isRealAWS()) {
+    try {
+      const bucket = process.env.AWS_S3_BUCKET_NAME;
+      const region = process.env.AWS_REGION || 'ap-southeast-1';
+
+      const command = new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: buffer,
+        ContentType: mimeType || 'application/octet-stream',
+      });
+
+      await client.send(command);
+
+      const publicUrl = process.env.AWS_CLOUDFRONT_URL
+        ? `${process.env.AWS_CLOUDFRONT_URL.replace(/\/$/, '')}/${key}`
+        : `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
+
+      logger.info(`✅ Uploaded file directly to S3: ${publicUrl}`);
+      return { url: publicUrl, key };
+    } catch (err) {
+      logger.warn(`AWS S3 Upload failed (${err.name}: ${err.message}). Using local fallback.`);
+    }
+  }
+
+  // Local Static Storage Fallback (if S3 is offline/unreachable)
+  const targetDir = path.join(__dirname, '../../uploads', cleanFolder);
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
+  }
+  const filename = `${timestamp}-${fileHash}${ext}`;
+  const filePath = path.join(targetDir, filename);
+  fs.writeFileSync(filePath, buffer);
+
+  const localStaticUrl = `http://localhost:5000/uploads/${cleanFolder}/${filename}`;
+  logger.info(`📸 [LOCAL DISK UPLOAD] Saved inquiry file to static disk: ${localStaticUrl}`);
+  return { url: localStaticUrl, key };
+};
+
+/**
  * Delete an image from AWS S3 (or local disk if stored locally)
  * @param {string} urlOrKey - Full URL or S3 object key
  */
 const deleteImage = async (urlOrKey) => {
   if (!urlOrKey) return;
+  // Skip external third-party CDNs or static public bundle assets
+  if (
+    typeof urlOrKey === 'string' &&
+    (urlOrKey.includes('unsplash.com') ||
+      urlOrKey.includes('placeholder.com') ||
+      (urlOrKey.startsWith('/') && !urlOrKey.includes('/uploads/')))
+  ) {
+    return;
+  }
   const key = extractKey(urlOrKey);
 
   const client = getS3Client();
@@ -161,4 +256,4 @@ const deleteImage = async (urlOrKey) => {
   } catch (_) {}
 };
 
-module.exports = { uploadImage, deleteImage, extractKey, isRealAWS };
+module.exports = { uploadImage, uploadFile, deleteImage, extractKey, isRealAWS };
