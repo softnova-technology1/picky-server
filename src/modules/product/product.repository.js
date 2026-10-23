@@ -19,7 +19,7 @@ const ProductRepository = {
   },
   findById: (id) => Product.findById(id).lean(),
   search: (q, skip, limit) =>
-    Product.find({ $text: { $search: q }, isActive: true }).sort({ score: { $meta: 'textScore' } }).skip(skip).limit(limit).lean(),
+    Product.find({ $text: { $search: q }, isActive: true }).populate('category', 'name slug').sort({ score: { $meta: 'textScore' } }).skip(skip).limit(limit).lean(),
   countSearch: (q) => Product.countDocuments({ $text: { $search: q }, isActive: true }),
   create: (data) => Product.create(data),
   update: (id, data) => Product.findByIdAndUpdate(id, data, { new: true }).lean(),
