@@ -95,14 +95,17 @@ const calculateServerOrderPricing = async ({
 
     const qty = Math.max(1, Number(item.quantity) || 1);
 
-    // Validate active discount window directly on server
-    const hasActiveOffer = Boolean(
-      dbProd.isDiscountActive &&
+    // Validate active discount: regular selling discount or active campaign window
+    const hasDiscountPrice = Boolean(
       dbProd.discountPrice &&
-      dbProd.discountPrice < dbProd.price &&
+      Number(dbProd.discountPrice) > 0 &&
+      Number(dbProd.discountPrice) < Number(dbProd.price)
+    );
+    const isOfferDateValid = Boolean(
       (!dbProd.offerStartDate || new Date(dbProd.offerStartDate) <= now) &&
       (!dbProd.offerEndDate || new Date(dbProd.offerEndDate) >= now)
     );
+    const hasActiveOffer = hasDiscountPrice && isOfferDateValid;
 
     const unitPrice = hasActiveOffer ? Number(dbProd.discountPrice) : Number(dbProd.price);
     subtotal += unitPrice * qty;
