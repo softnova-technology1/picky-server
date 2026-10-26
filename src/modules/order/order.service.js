@@ -5,6 +5,7 @@ const CartRepo = require('../cart/cart.repository');
 const Cart = require('../../models/cart.model');
 const Inventory = require('../../models/inventory.model');
 const CheckoutReservation = require('../../models/checkoutReservation.model');
+const CheckoutPaymentIntent = require('../../models/checkoutPaymentIntent.model');
 const Coupon = require('../../models/coupon.model');
 const User = require('../../models/user.model');
 const Product = require('../../models/product.model');
@@ -14,6 +15,7 @@ const RazorpayService = require('../../services/razorpay.service');
 const paginate = require('../../utils/paginate');
 const mongoose = require('mongoose');
 const logger = require('../../utils/logger');
+const { assertPaymentMatchesIntent, assertDirectOrderIsAllowed } = require('./paymentValidation');
 
 /**
  * audit fix #7 — Replaced Math.random() 4-digit suffix with 8-char crypto hex.
@@ -241,6 +243,9 @@ const OrderService = {
     // Check existing active reservation for this session (idempotent / dynamic update)
     const existing = await CheckoutReservation.findOne({ sessionId, status: 'reserved' });
     if (existing) {
+      if (!user?._id || existing.user?.toString() !== user._id.toString()) {
+        throw new AppError('Checkout reservation does not belong to this account', 403);
+      }
       const existingKey = existing.items.map((i) => `${i.product}:${i.quantity}`).sort().join(',');
       const newKey = checkoutItems.map((i) => `${i.product}:${i.quantity}`).sort().join(',');
       if (existingKey === newKey) {
@@ -329,46 +334,51 @@ const OrderService = {
   /**
    * Release reserved stock on Checkout Failure / Cancellation (Restock back to Available)
    */
-  async releaseCheckout(user, { sessionId, items = [] }) {
-    let itemsToRelease = [];
+  async releaseCheckout(user, { sessionId }) {
+    if (!user?._id) throw new AppError('Please log in before releasing checkout stock', 401);
+    if (!sessionId) throw new AppError('Checkout session is required', 400);
 
-    if (sessionId) {
-      const resRecord = await CheckoutReservation.findOne({ sessionId, status: 'reserved' });
-      if (resRecord) {
-        itemsToRelease = resRecord.items;
-        resRecord.status = 'released';
-        await resRecord.save();
-      }
+    const session = await mongoose.startSession();
+    let itemsReleased = 0;
+    try {
+      await session.withTransaction(async () => {
+        const reservation = await CheckoutReservation.findOne({ sessionId }).session(session);
+        if (!reservation) return;
+        if (reservation.user?.toString() !== user._id.toString()) {
+          throw new AppError('Checkout reservation does not belong to this account', 403);
+        }
+        if (reservation.status !== 'reserved') return;
+
+        const claimedReservation = await CheckoutReservation.findOneAndUpdate(
+          { _id: reservation._id, user: user._id, status: 'reserved' },
+          { $set: { status: 'released' } },
+          { new: false, session }
+        );
+        if (!claimedReservation) return;
+
+        for (const item of claimedReservation.items) {
+          const updatedInventory = await Inventory.findOneAndUpdate(
+            { product: item.product, reserved: { $gte: item.quantity } },
+            { $inc: { quantity: item.quantity, reserved: -item.quantity } },
+            { new: true, session }
+          );
+          if (!updatedInventory) throw new AppError('Inventory reservation is inconsistent', 409);
+          await Product.findByIdAndUpdate(
+            item.product,
+            { $inc: { stock: item.quantity } },
+            { session }
+          );
+          itemsReleased += 1;
+        }
+      });
+    } finally {
+      await session.endSession();
     }
 
-    if (itemsToRelease.length === 0 && Array.isArray(items) && items.length > 0) {
-      itemsToRelease = items
-        .map((i) => ({
-          product: (i.productId || i.product || i._id || i.id)?.toString(),
-          quantity: Math.max(1, Number(i.quantity) || 1),
-        }))
-        .filter((i) => i.product);
+    if (itemsReleased > 0) {
+      logger.info(`[CHECKOUT] Released ${itemsReleased} reserved items for session: ${sessionId}`);
     }
-
-    if (itemsToRelease.length > 0) {
-      for (const item of itemsToRelease) {
-        await Inventory.findOneAndUpdate(
-          { product: item.product },
-          { $inc: { quantity: item.quantity, reserved: -item.quantity } }
-        );
-        await Inventory.updateOne(
-          { product: item.product, reserved: { $lt: 0 } },
-          { $set: { reserved: 0 } }
-        );
-        await Product.findByIdAndUpdate(
-          item.product,
-          { $inc: { stock: item.quantity } }
-        );
-      }
-      logger.info(`[CHECKOUT] Restocked ${itemsToRelease.length} items from released session: ${sessionId || 'manual'}`);
-    }
-
-    return { released: true, count: itemsToRelease.length };
+    return { released: itemsReleased > 0, count: itemsReleased };
   },
 
   /**
@@ -383,7 +393,11 @@ const OrderService = {
     giftWrap,
     giftWrapFee,
     sessionId,
+    isBuyNow = false,
+    fromCart = false,
   }) {
+    if (!user?._id) throw new AppError('Please log in before checkout', 401);
+
     let checkoutItems = items;
     if ((!checkoutItems || checkoutItems.length === 0) && user?._id) {
       const cart = await CartRepo.findByUser(user._id);
@@ -421,21 +435,49 @@ const OrderService = {
       },
     });
 
-    // Auto-reserve stock or link existing checkout reservation to this Razorpay session
-    try {
-      if (sessionId) {
-        const existingRes = await CheckoutReservation.findOne({ sessionId, status: 'reserved' });
-        if (existingRes) {
-          existingRes.sessionId = rzOrder.id;
-          await existingRes.save();
-        } else {
-          await this.reserveCheckout(user, { items: pricing.verifiedItems, sessionId: rzOrder.id });
+    // Payment must not proceed unless stock is reserved for this user and exact item set.
+    if (sessionId) {
+      const existingRes = await CheckoutReservation.findOne({ sessionId, status: 'reserved' });
+      if (existingRes) {
+        if (existingRes.user?.toString() !== user._id.toString()) {
+          throw new AppError('Checkout reservation does not belong to this account', 403);
         }
+        const resItems = existingRes.items
+          .map((item) => `${item.product}:${item.quantity}`).sort().join(',');
+        const priceItems = pricing.verifiedItems
+          .map((item) => `${item.product}:${item.quantity}`).sort().join(',');
+        if (resItems !== priceItems) {
+          throw new AppError('Reserved items changed. Please restart checkout.', 409);
+        }
+        existingRes.sessionId = rzOrder.id;
+        existingRes.expiresAt = new Date(Date.now() + 20 * 60 * 1000);
+        await existingRes.save();
       } else {
         await this.reserveCheckout(user, { items: pricing.verifiedItems, sessionId: rzOrder.id });
       }
-    } catch (resErr) {
-      logger.warn(`[CHECKOUT] Auto-reserve notice: ${resErr.message}`);
+    } else {
+      await this.reserveCheckout(user, { items: pricing.verifiedItems, sessionId: rzOrder.id });
+    }
+
+    try {
+      await CheckoutPaymentIntent.create({
+        razorpayOrderId: rzOrder.id,
+        user: user._id,
+        pricing,
+        shippingAddress,
+        giftWrap: giftWrap ? {
+          isGiftWrapped: isGift,
+          fee: pricing.giftWrapFee,
+          message: isGift ? (giftWrap?.message || '').trim() : '',
+        } : null,
+        deliveryMode,
+        isBuyNow: Boolean(isBuyNow),
+        fromCart: Boolean(fromCart),
+        expiresAt: new Date(Date.now() + 20 * 60 * 1000),
+      });
+    } catch (err) {
+      await this.releaseCheckout(user, { sessionId: rzOrder.id }).catch(() => null);
+      throw err;
     }
 
     return {
@@ -451,172 +493,141 @@ const OrderService = {
 
 
   /**
-   * 2. Verify Razorpay Payment Signature and Create Order in DB
-   *
-   * audit fix #1 — Wrapped ALL write operations in a MongoDB transaction.
-   * Before: Inventory deduct → Order create → coupon record (3 separate writes).
-   * If any write failed midway: inventory phantom-deducted, order ghost-created.
-   * Now: all 4 operations are atomic — all commit or all rollback together.
-   *
-   * NOTE: MongoDB transactions require a replica set. Atlas always supports this.
-   * For local dev, start mongod with --replSet rs0 or use Docker with replica set.
+   * Verify the Razorpay signature, gateway order/payment and stored checkout intent,
+   * then atomically create the order and consume the matching stock reservation.
+   * Requires MongoDB transaction support (a replica set, as provided by Atlas).
    */
   async verifyAndCreateOrder(user, {
-    shippingAddress,
     razorpayOrderId,
     razorpayPaymentId,
     razorpaySignature,
-    items,
-    coupon,
-    couponCode,
-    courier,
-    deliveryMode,
-    giftWrap,
-    giftWrapFee,
-    sessionId,
-    isBuyNow = false,
-    fromCart = false,
   }) {
-    const isGift = Boolean(giftWrap?.isGiftWrapped || giftWrap === true);
-    const calculatedGiftWrapFee = isGift ? (Number(giftWrap?.fee !== undefined ? giftWrap.fee : giftWrapFee) || 0) : 0;
-    const giftMessage = isGift ? (giftWrap?.message || '').trim() : '';
-    let cart = await CartRepo.findByUser(user._id);
-    if (!isBuyNow && (!cart || cart.items.length === 0) && items && items.length > 0) {
-      const CartService = require('../cart/cart.service');
-      await CartService.mergeGuestCart(user._id, items);
-      cart = await CartRepo.findByUser(user._id);
+    if (!user?._id) throw new AppError('Please log in before verifying payment', 401);
+    if (!razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
+      throw new AppError('Razorpay payment details are incomplete', 400);
     }
 
-    // Verify cryptographic signature (audit fix #3 — bypass bug was removed in razorpay.service.js)
-    const isValid = RazorpayService.verifyPaymentSignature({
+    const existingOrder = await Order.findOne({ razorpayOrderId, user: user._id }).lean();
+    if (existingOrder) return existingOrder;
+
+    const intent = await CheckoutPaymentIntent.findOne({
+      razorpayOrderId,
+      user: user._id,
+      status: 'pending',
+      expiresAt: { $gt: new Date() },
+    }).lean();
+    if (!intent) throw new AppError('Checkout expired or does not belong to this account', 404);
+
+    const signatureIsValid = RazorpayService.verifyPaymentSignature({
       razorpayOrderId,
       razorpayPaymentId,
       razorpaySignature,
     });
-
-    if (!isValid) {
-      throw new AppError('Payment signature verification failed. Please contact support if debited.', 400);
+    if (!signatureIsValid) {
+      throw new AppError('Payment signature verification failed', 400);
     }
 
-    // Check if order already exists for this razorpayOrderId (idempotency — webhook dedup)
-    const existingOrder = await Order.findOne({ razorpayOrderId }).lean();
-    if (existingOrder) {
-      logger.info(`[ORDER] Duplicate order creation skipped for razorpayOrderId: ${razorpayOrderId}`);
-      return existingOrder;
-    }
-
-    // Authoritative Server-side Price & Order Calculation
-    let itemsToProcess = items;
-    if ((!itemsToProcess || itemsToProcess.length === 0) && cart && cart.items.length > 0) {
-      itemsToProcess = cart.items.map((i) => ({
-        productId: i.product,
-        quantity: i.quantity,
-      }));
-    }
-
-    if (!itemsToProcess || itemsToProcess.length === 0) {
-      throw new AppError('Order must contain at least one valid item', 400);
-    }
-
-    const pricing = await calculateServerOrderPricing({
-      user,
-      items: itemsToProcess,
-      couponCode: couponCode || coupon || cart?.coupon,
-      shippingAddress,
-      deliveryMode,
-      isGiftWrap: isGift,
-      giftWrapFee: calculatedGiftWrapFee,
-    });
-
-    const order = await Order.create({
-      orderNumber: generateOrderNumber(),
-      user: user?._id || null,
-      items: pricing.verifiedItems,
-      shippingAddress,
-      subtotal: pricing.subtotal,
-      discountAmount: pricing.discountAmount,
-      shippingFee: pricing.shippingFee,
-      convenienceFee: pricing.convenienceFee,
-      giftWrapFee: pricing.giftWrapFee,
-      giftWrap: {
-        isGiftWrapped: isGift,
-        fee: pricing.giftWrapFee,
-        message: giftMessage,
-      },
-      total: pricing.total,
-      paymentMethod: 'razorpay',
-      paymentStatus: 'paid',
+    const { order: gatewayOrder, payment } = await RazorpayService.fetchPaymentDetails(
+      razorpayOrderId,
+      razorpayPaymentId
+    );
+    assertPaymentMatchesIntent({
+      intent,
       razorpayOrderId,
       razorpayPaymentId,
-      razorpaySignature,
-      courier: courier || (deliveryMode === 'pickup' ? 'Self Store Pickup' : ''),
-      status: 'placed',
-      statusHistory: [{ status: 'placed', note: 'Order placed by customer (Prepaid via Razorpay)', timestamp: new Date() }],
+      gatewayOrder,
+      payment,
     });
 
-      triggerOrderNotification(order, user, shippingAddress);
+    const session = await mongoose.startSession();
+    let order;
+    try {
+      await session.withTransaction(async () => {
+        const claimedIntent = await CheckoutPaymentIntent.findOneAndUpdate(
+          { _id: intent._id, status: 'pending', expiresAt: { $gt: new Date() } },
+          { $set: { status: 'processing' } },
+          { new: true, session }
+        );
+        if (!claimedIntent) throw new AppError('Payment is already being processed', 409);
 
-      // Move from RESERVED to SOLD upon successful payment verification
-      const activeRes = await CheckoutReservation.findOne({
-        $or: [
-          ...(razorpayOrderId ? [{ sessionId: razorpayOrderId }] : []),
-          ...(sessionId ? [{ sessionId }] : []),
-          ...(user?._id ? [{ user: user._id, status: 'reserved' }] : []),
-        ],
-        status: 'reserved',
+        const reservation = await CheckoutReservation.findOne({
+          sessionId: razorpayOrderId,
+          user: user._id,
+          status: 'reserved',
+          expiresAt: { $gt: new Date() },
+        }).session(session);
+        if (!reservation) throw new AppError('Reserved stock is no longer available; contact support', 409);
+
+        const expectedItems = intent.pricing.verifiedItems
+          .map((item) => `${item.product}:${item.quantity}`).sort().join(',');
+        const reservedItems = reservation.items
+          .map((item) => `${item.product}:${item.quantity}`).sort().join(',');
+        if (expectedItems !== reservedItems) {
+          throw new AppError('Reserved products do not match the paid checkout', 409);
+        }
+
+        const pricing = intent.pricing;
+        const orderData = {
+          orderNumber: generateOrderNumber(),
+          user: user._id,
+          items: pricing.verifiedItems,
+          shippingAddress: intent.shippingAddress,
+          subtotal: pricing.subtotal,
+          discountAmount: pricing.discountAmount,
+          shippingFee: pricing.shippingFee,
+          convenienceFee: pricing.convenienceFee,
+          giftWrapFee: pricing.giftWrapFee,
+          giftWrap: intent.giftWrap || { isGiftWrapped: false, fee: 0, message: '' },
+          total: pricing.total,
+          paymentMethod: 'razorpay',
+          paymentStatus: 'paid',
+          razorpayOrderId,
+          razorpayPaymentId,
+          razorpaySignature,
+          courier: intent.courier || (intent.deliveryMode === 'pickup' ? 'Self Store Pickup' : ''),
+          status: 'placed',
+          statusHistory: [{ status: 'placed', note: 'Payment captured by Razorpay', timestamp: new Date() }],
+        };
+        [order] = await Order.create([orderData], { session });
+
+        for (const item of reservation.items) {
+          const updatedInventory = await Inventory.findOneAndUpdate(
+            { product: item.product, reserved: { $gte: item.quantity } },
+            { $inc: { reserved: -item.quantity, sold: item.quantity } },
+            { new: true, session }
+          );
+          if (!updatedInventory) throw new AppError('Inventory reservation is inconsistent', 409);
+        }
+
+        reservation.status = 'completed';
+        await reservation.save({ session });
+
+        await User.findByIdAndUpdate(user._id, { $inc: { orderCount: 1 } }, { session });
+        if (!intent.isBuyNow || intent.fromCart) {
+          await Cart.findOneAndUpdate(
+            { user: user._id },
+            { items: [], coupon: null, couponDiscount: 0 },
+            { session }
+          );
+        }
+
+        claimedIntent.status = 'paid';
+        claimedIntent.order = order._id;
+        claimedIntent.paymentId = razorpayPaymentId;
+        await claimedIntent.save({ session });
       });
-      if (activeRes) {
-        activeRes.status = 'completed';
-        await activeRes.save();
-        for (const item of activeRes.items) {
-          await Inventory.findOneAndUpdate(
-            { product: item.product },
-            { $inc: { reserved: -item.quantity, sold: item.quantity } }
-          );
-          await Inventory.updateOne(
-            { product: item.product, reserved: { $lt: 0 } },
-            { $set: { reserved: 0 } }
-          );
-        }
-        logger.info(`[ORDER] Pre-reserved items moved to SOLD for session: ${activeRes.sessionId}`);
-      } else {
-        // Fallback: Deduct available quantity and increment SOLD
-        for (const item of pricing.verifiedItems) {
-          if (item.product) {
-            try {
-              await Inventory.findOneAndUpdate(
-                { product: item.product },
-                { $inc: { quantity: -item.quantity, sold: item.quantity } },
-                { new: true }
-              );
-              await Inventory.updateOne(
-                { product: item.product, quantity: { $lt: 0 } },
-                { $set: { quantity: 0 } }
-              );
-              await Product.findByIdAndUpdate(
-                item.product,
-                { $inc: { stock: -item.quantity } },
-                { new: true }
-              );
-              await Product.updateOne(
-                { _id: item.product, stock: { $lt: 0 } },
-                { $set: { stock: 0 } }
-              );
-            } catch (stkErr) {
-              logger.error(`[ORDER] Stock deduction error for ${item.product}: ${stkErr.message}`);
-            }
-          }
-        }
-      }
+    } finally {
+      await session.endSession();
+    }
 
-      if (user?._id) {
-        await User.findByIdAndUpdate(user._id, { $inc: { orderCount: 1 } });
-        if (!isBuyNow || fromCart) {
-          await Cart.findOneAndUpdate({ user: user._id }, { items: [], coupon: null, couponDiscount: 0 });
-        }
-      }
-
-      return order;
+    await triggerOrderNotification(order, user, intent.shippingAddress);
+    NotificationService.sendOrderConfirmed(
+      user.phone,
+      user.name || 'Customer',
+      order.orderNumber,
+      order.total
+    ).catch((err) => logger.error(`[WATI] Order confirmed notification failed: ${err.message}`));
+    return order;
   },
 
   /**
@@ -644,16 +655,15 @@ const OrderService = {
       throw new AppError('Full shipping address (street, city, state, pincode) is required', 400);
     }
 
-    // Security: Block direct forging of 'paid' orders in production without payment verification
-    let resolvedPaymentStatus = 'pending';
-    if (process.env.NODE_ENV === 'production') {
-      if (paymentStatus === 'paid' && !razorpayPaymentId) {
-        throw new AppError('Direct creation of paid orders without gateway verification is forbidden', 403);
-      }
-      resolvedPaymentStatus = razorpayPaymentId ? 'paid' : 'pending';
-    } else {
-      resolvedPaymentStatus = paymentStatus === 'paid' ? 'paid' : 'pending';
-    }
+    assertDirectOrderIsAllowed({
+      environment: process.env.NODE_ENV,
+      paymentMethod,
+      paymentStatus,
+      razorpayPaymentId,
+      razorpayOrderId,
+    });
+    // Direct order creation never records a payment as paid; only verified Razorpay can.
+    const resolvedPaymentStatus = 'pending';
 
     const isGift = Boolean(giftWrap?.isGiftWrapped || giftWrap === true);
     const giftMessage = isGift ? (giftWrap?.message || '').trim() : '';

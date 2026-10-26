@@ -7,6 +7,7 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "lint": "eslint src/**/*.js",
+    "test": "node --test",
     "seed": "node scripts/seedDefinitiveCategories.js && node scripts/seedAllRealProductsS3.js",
     "seed:categories": "node scripts/seedDefinitiveCategories.js",
     "seed:products": "node scripts/seedAllRealProductsS3.js",

@@ -64,6 +64,19 @@ const RazorpayService = {
     };
   },
 
+  async fetchPaymentDetails(razorpayOrderId, razorpayPaymentId) {
+    if (!razorpayClient) {
+      throw new Error('Razorpay API is unavailable; live payment verification cannot be performed');
+    }
+
+    const [order, payment] = await Promise.all([
+      razorpayClient.orders.fetch(razorpayOrderId),
+      razorpayClient.payments.fetch(razorpayPaymentId),
+    ]);
+
+    return { order, payment };
+  },
+
   /**
    * Verifies Razorpay payment signature
    * audit fix #3 — removed the `startsWith('order_')` bypass that silently

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const orderController = require('./order.controller');
-const { authenticate, optionalAuthenticate } = require('../../middleware/auth.middleware');
+const { authenticate } = require('../../middleware/auth.middleware');
 const { requireRole } = require('../../middleware/role.middleware');
 const { validate } = require('../../middleware/validate.middleware');
 const { addTrackingSchema, updateStatusSchema } = require('./order.schema');
@@ -13,12 +13,12 @@ router.post(
   orderController.handleRazorpayWebhook
 );
 
-// ─── Customer Order Creation & List (Guest or Logged In) ─────────────────────
-router.post('/checkout/reserve', optionalAuthenticate, orderController.reserveCheckout);
-router.post('/checkout/release', optionalAuthenticate, orderController.releaseCheckout);
-router.post('/razorpay/create-order', optionalAuthenticate, orderController.createRazorpayOrder);
-router.post('/razorpay/verify', optionalAuthenticate, orderController.verifyRazorpayOrder);
-router.post('/', optionalAuthenticate, orderController.createOrder);
+// ─── Authenticated Customer Checkout & Order Routes ─────────────────────────
+router.post('/checkout/reserve', authenticate, orderController.reserveCheckout);
+router.post('/checkout/release', authenticate, orderController.releaseCheckout);
+router.post('/razorpay/create-order', authenticate, orderController.createRazorpayOrder);
+router.post('/razorpay/verify', authenticate, orderController.verifyRazorpayOrder);
+router.post('/', authenticate, orderController.createOrder);
 
 router.get('/track/:orderNumber', orderController.trackOrderByNumber);
 router.get('/', authenticate, orderController.myOrders);
