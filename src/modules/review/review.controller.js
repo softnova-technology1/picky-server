@@ -31,6 +31,15 @@ const getProductReviews = async (req, res, next) => {
   }
 };
 
+const getPublicReviews = async (req, res, next) => {
+  try {
+    const data = await ReviewService.getPublicReviews();
+    return res.status(200).json(ApiResponse.success(data));
+  } catch (err) {
+    next(err);
+  }
+};
+
 const getAdminReviews = async (req, res, next) => {
   try {
     const data = await ReviewService.getAdminReviews(req.query);
@@ -121,6 +130,7 @@ module.exports = {
   uploadReviewPhoto,
   createReview,
   getProductReviews,
+  getPublicReviews,
   getAdminReviews,
   updateStatus,
   replyToReview,
