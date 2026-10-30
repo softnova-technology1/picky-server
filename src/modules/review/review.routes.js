@@ -28,6 +28,10 @@ router.post('/', authenticate, reviewController.createReview);
 // 3. Get all published reviews for a product (PDP)
 router.get('/product/:productId', reviewController.getProductReviews);
 
+// 3.1 Public: Get published / featured reviews for storefront
+router.get('/featured', reviewController.getPublicReviews);
+router.get('/public', reviewController.getPublicReviews);
+
 // ─── Admin Moderation Endpoints ───
 // 4. Get all reviews with status counts & KPIs
 router.get('/admin', authenticate, requireRole('admin'), reviewController.getAdminReviews);

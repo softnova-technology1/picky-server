@@ -155,6 +155,18 @@ const ReviewService = {
   /**
    * 4. Admin: Get All Reviews with Moderation Filters & Real-time KPIs
    */
+    /**
+   * 3.1 Public: Get Published & Featured Reviews for Storefront
+   */
+  async getPublicReviews() {
+    const reviews = await Review.find({ status: 'published' })
+      .populate('product', 'name slug images price discountPrice category subCategory')
+      .sort({ isFeatured: -1, createdAt: -1 })
+      .limit(30)
+      .lean();
+    return reviews;
+  },
+
   async getAdminReviews(query = {}) {
     const { status, rating, search, sortBy } = query;
     const filter = {};
