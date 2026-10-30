@@ -1,3 +1,7 @@
+const dns = require('dns');
+try {
+  dns.setServers(['8.8.8.8', '1.1.1.1']);
+} catch (_) {}
 require('dotenv').config();
 const validateEnv = require('./config/env');
 const connectDB = require('./config/db');
