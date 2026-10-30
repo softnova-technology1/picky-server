@@ -3,7 +3,7 @@ const { ApiResponse } = require('../../utils/apiResponse');
 const { uploadImage } = require('../../services/s3.service');
 const logger = require('../../utils/logger');
 
-const DEFAULT_BLOG_HERO = {
+const DEFAULT_BLOG_DATA = {
   pageSlug: 'blog',
   isBlogPageEnabled: true,
   hero: {
@@ -15,6 +15,15 @@ const DEFAULT_BLOG_HERO = {
     secondaryButtonText: 'Shop Products',
     imageUrl: 'https://picky-e-com.s3.ap-southeast-1.amazonaws.com/picky/blog/blog_hero_slash.jpg',
   },
+  metrics: {
+    enabled: true,
+    items: [
+      { id: 'm-1', value: '50+ Shoppable Guides', label: 'Tested & Curated by Editors', iconName: 'Video' },
+      { id: 'm-2', value: '100% Quality Verified', label: 'Hands-on Product Reviews', iconName: 'ShieldCheck' },
+      { id: 'm-3', value: '1-Click Direct Bag', label: 'Instant Shelves Checkout', iconName: 'ShoppingBag' },
+      { id: 'm-4', value: '4.9/5 Shopper Rating', label: 'Over 12,000+ Verified Buyers', iconName: 'Star' },
+    ],
+  },
 };
 
 /**
@@ -24,8 +33,11 @@ const getBlogData = async (req, res, next) => {
   try {
     let blogDoc = await Blog.findOne({ pageSlug: 'blog' });
     if (!blogDoc) {
-      blogDoc = await Blog.create(DEFAULT_BLOG_HERO);
+      blogDoc = await Blog.create(DEFAULT_BLOG_DATA);
       logger.info('Created initial Blog document in MongoDB');
+    } else if (!blogDoc.metrics || !blogDoc.metrics.items || blogDoc.metrics.items.length === 0) {
+      blogDoc.metrics = DEFAULT_BLOG_DATA.metrics;
+      await blogDoc.save();
     }
     return res.json(ApiResponse.success(blogDoc));
   } catch (err) {

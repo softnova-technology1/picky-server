@@ -1,5 +1,15 @@
 const mongoose = require('mongoose');
 
+const metricItemSchema = new mongoose.Schema(
+  {
+    id: { type: String },
+    value: { type: String, required: true },
+    label: { type: String, required: true },
+    iconName: { type: String, default: 'Sparkles' },
+  },
+  { _id: false }
+);
+
 const blogSchema = new mongoose.Schema(
   {
     pageSlug: { type: String, default: 'blog', unique: true },
@@ -18,6 +28,10 @@ const blogSchema = new mongoose.Schema(
         type: String,
         default: 'https://picky-e-com.s3.ap-southeast-1.amazonaws.com/picky/blog/blog_hero_slash.jpg',
       },
+    },
+    metrics: {
+      enabled: { type: Boolean, default: true },
+      items: [metricItemSchema],
     },
   },
   {
