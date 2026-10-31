@@ -1,9 +1,15 @@
+const dns = require('dns');
+try {
+  dns.setServers(['8.8.8.8', '1.1.1.1']);
+} catch (_) {}
 require('dotenv').config();
+const http = require('http');
 const validateEnv = require('./config/env');
 const connectDB = require('./config/db');
 const initializeDB = require('./config/initializeDB');
 const redis = require('./config/redis');
 const app = require('./app');
+const { initSocket } = require('./socket');
 const logger = require('./utils/logger');
 // Server entry point - Picky Backend API (Atlas DB configured & Google OAuth enabled)
 const PORT = process.env.PORT || 5000;
@@ -27,24 +33,42 @@ const start = async () => {
     logger.warn(`Redis connection skipped: ${err.message}`);
   }
 
-  // 4. Start Express server
-  const server = app.listen(PORT, () => {
+  // 4. Create HTTP Server & Initialize Socket.IO
+  const httpServer = http.createServer(app);
+  initSocket(httpServer);
+
+  // 5. Start listening
+  const server = httpServer.listen(PORT, () => {
     logger.info(`✅ picky-server running on http://localhost:${PORT}`);
     logger.info(`📡 API: http://localhost:${PORT}/api/v1`);
     logger.info(`🏥 Health: http://localhost:${PORT}/health`);
+    logger.info(`🔌 WebSocket / Socket.IO ready on port ${PORT}`);
 
-    // 5. Initialize Automated Background Cron Jobs
+    // 6. Initialize Automated Background Cron Jobs
     try {
       const { initCronJobs } = require('./jobs');
       initCronJobs();
     } catch (cronErr) {
       logger.error(`❌ Cron jobs failed to initialize: ${cronErr.message}`);
     }
+
+    // 7. Initialize BullMQ Asynchronous Queues & Background Workers
+    try {
+      const { initWorkers } = require('./workers');
+      initWorkers();
+    } catch (workerErr) {
+      logger.warn(`⚠️ BullMQ workers initialization warning: ${workerErr.message}`);
+    }
   });
 
   // Graceful shutdown on cloud deployment (Render, AWS, Docker)
   const shutdown = async (signal) => {
     logger.info(`Received ${signal}. Shutting down gracefully...`);
+    try {
+      const { closeWorkers } = require('./workers');
+      await closeWorkers();
+    } catch (_) {}
+
     server.close(async () => {
       const mongoose = require('mongoose');
       await mongoose.connection.close();

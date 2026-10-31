@@ -1,0 +1,15 @@
+node_modules
+npm-debug.log*
+yarn-error.log*
+logs/*.log
+uploads/*
+!uploads/.gitkeep
+.env
+.env.local
+.git
+.github
+test
+coverage
+.DS_Store
+*.md
+

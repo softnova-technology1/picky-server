@@ -1,5 +1,6 @@
 const ProductService = require('./product.service');
 const { ApiResponse } = require('../../utils/apiResponse');
+const { emitCatalogUpdate } = require('../../socket');
 
 const list = async (req, res, next) => {
   try {
@@ -26,6 +27,7 @@ const search = async (req, res, next) => {
 const create = async (req, res, next) => {
   try {
     const product = await ProductService.create(req.body, req.files);
+    try { emitCatalogUpdate('PRODUCT_CREATED', product); } catch (_) {}
     return res.status(201).json(ApiResponse.success(product, 'Product created'));
   } catch (err) { next(err); }
 };
@@ -33,6 +35,7 @@ const create = async (req, res, next) => {
 const update = async (req, res, next) => {
   try {
     const product = await ProductService.update(req.params.id, req.body, req.files);
+    try { emitCatalogUpdate('PRODUCT_UPDATED', product); } catch (_) {}
     return res.json(ApiResponse.success(product, 'Product updated'));
   } catch (err) { next(err); }
 };
@@ -40,6 +43,7 @@ const update = async (req, res, next) => {
 const remove = async (req, res, next) => {
   try {
     await ProductService.delete(req.params.id);
+    try { emitCatalogUpdate('PRODUCT_DELETED', { id: req.params.id }); } catch (_) {}
     return res.json(ApiResponse.success(null, 'Product deleted'));
   } catch (err) { next(err); }
 };
@@ -47,6 +51,7 @@ const remove = async (req, res, next) => {
 const toggleStatus = async (req, res, next) => {
   try {
     const product = await ProductService.toggleStatus(req.params.id);
+    try { emitCatalogUpdate('PRODUCT_STATUS_CHANGED', product); } catch (_) {}
     return res.json(ApiResponse.success(product, `Product ${product.isActive ? 'activated' : 'deactivated'}`));
   } catch (err) { next(err); }
 };

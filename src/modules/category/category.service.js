@@ -3,32 +3,49 @@ const AppError = require('../../utils/appError');
 const CategoryRepo = require('./category.repository');
 const { uploadImage, deleteImage } = require('../../services/s3.service');
 const sharp = require('sharp');
+const redis = require('../../config/redis');
+const { emitCatalogUpdate } = require('../../socket');
 
 const slugify = (name) =>
   name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
-let categoryCache = null;
-let categoryCacheTime = 0;
-const CAT_CACHE_TTL = 120 * 1000; // 2 minutes
-
-const clearCategoryCache = () => {
-  categoryCache = null;
-  categoryCacheTime = 0;
+const clearCategoryCache = async (mutationType = 'CATEGORY_UPDATED') => {
+  try {
+    await redis.del('categories:active');
+    await redis.del('categories:all');
+  } catch (err) {
+    // Ignore cache invalidation error
+  }
+  try {
+    emitCatalogUpdate(mutationType);
+  } catch (err) {
+    // Ignore socket broadcast error
+  }
 };
 
 const CategoryService = {
   clearCache: clearCategoryCache,
 
   async list(includeInactive = false) {
-    if (!includeInactive && categoryCache && Date.now() - categoryCacheTime < CAT_CACHE_TTL) {
-      return categoryCache;
+    const cacheKey = includeInactive ? 'categories:all' : 'categories:active';
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    } catch (err) {
+      // Fall back to database on cache miss or parse failure
     }
+
     const filter = includeInactive ? {} : { isActive: true };
     const cats = await CategoryRepo.findAll(filter);
-    if (!includeInactive) {
-      categoryCache = cats;
-      categoryCacheTime = Date.now();
+
+    try {
+      await redis.set(cacheKey, JSON.stringify(cats), 'EX', 300); // Cache for 5 minutes
+    } catch (err) {
+      // Ignore cache write error
     }
+
     return cats;
   },
 
@@ -49,8 +66,9 @@ const CategoryService = {
       const result = await uploadImage(buf, 'category');
       image = result.url;
     }
-    clearCategoryCache();
-    return CategoryRepo.create({ ...body, slug, image });
+    const created = await CategoryRepo.create({ ...body, slug, image });
+    await clearCategoryCache('CATEGORY_CREATED');
+    return created;
   },
 
   async update(id, body, file) {
@@ -67,24 +85,26 @@ const CategoryService = {
     }
     // Prevent updating the slug so frontend constants don't break
     delete body.slug;
-    clearCategoryCache();
-    return CategoryRepo.update(id, { ...body, image });
+    const updated = await CategoryRepo.update(id, { ...body, image });
+    await clearCategoryCache('CATEGORY_UPDATED');
+    return updated;
   },
 
   async updateCharacteristics(id, characteristics) {
     const category = await CategoryRepo.findById(id);
     if (!category) throw new AppError('Category not found', 404);
-    clearCategoryCache();
-    return CategoryRepo.update(id, { characteristics });
+    const updated = await CategoryRepo.update(id, { characteristics });
+    await clearCategoryCache('CATEGORY_CHARACTERISTICS_UPDATED');
+    return updated;
   },
 
   async softDelete(id) {
     const category = await CategoryRepo.findById(id);
     if (!category) throw new AppError('Category not found', 404);
-    clearCategoryCache();
-    return CategoryRepo.update(id, { isActive: false });
+    const updated = await CategoryRepo.update(id, { isActive: false });
+    await clearCategoryCache('CATEGORY_DELETED');
+    return updated;
   },
 };
 
 module.exports = CategoryService;
-

@@ -857,6 +857,7 @@ const OrderService = {
       }
     } catch (_) {}
 
+    try { const { emitOrderUpdate } = require('../../socket'); emitOrderUpdate(order, 'NEW_ORDER'); } catch (_) {}
     return order;
   },
 
