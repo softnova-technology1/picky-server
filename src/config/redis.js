@@ -110,6 +110,14 @@ const redisProxy = {
     return memoryFallback.del(key);
   },
 
+  getStatus() {
+    return realRedis && isRealRedisReady ? 'connected' : 'in-memory-fallback';
+  },
+
+  isReady() {
+    return Boolean(realRedis && isRealRedisReady);
+  },
+
   on() {},
 };
 

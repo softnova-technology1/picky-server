@@ -9,6 +9,7 @@ const AppError = require('./utils/appError');
 const { ApiResponse } = require('./utils/apiResponse');
 const logger = require('./utils/logger');
 const mongoose = require('mongoose');
+const redis = require('./config/redis');
 
 // ─── Route imports ──────────────────────────────────────────────────────────
 const authRoutes = require('./modules/auth/auth.routes');
@@ -39,7 +40,10 @@ app.use(helmet({
   crossOriginResourcePolicy: false, // allow images/files to be accessed cross-origin by the client
 }));
 app.use(cors({
-  origin: (process.env.ALLOWED_ORIGINS || 'http://localhost:3000').split(','),
+  origin: (process.env.ALLOWED_ORIGINS || 'http://localhost:3000')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean),
   credentials: true,
 }));
 app.use(apiLimiter);
@@ -70,21 +74,65 @@ if (process.env.NODE_ENV !== 'production') {
   }));
 }
 
-// ─── Health Check with Database Readiness ──────────────────────────────────
+// ─── Health Check with Database Readiness & Diagnostics ────────────────────
 app.get('/health', (req, res) => {
   const isDbReady = mongoose.connection.readyState === 1;
+  const redisStatus = typeof redis.getStatus === 'function' ? redis.getStatus() : 'unknown';
   const status = isDbReady ? 'ok' : 'degraded';
   const statusCode = isDbReady ? 200 : 503;
+
+  const uptimeSeconds = Math.floor(process.uptime());
+  const hours = Math.floor(uptimeSeconds / 3600);
+  const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+  const seconds = uptimeSeconds % 60;
+
+  const mem = process.memoryUsage();
+
   res.status(statusCode).json({
     status,
     database: isDbReady ? 'connected' : 'disconnected',
-    env: process.env.NODE_ENV,
+    redis: redisStatus,
+    uptime: `${hours}h ${minutes}m ${seconds}s`,
+    uptimeSeconds,
+    memory: {
+      heapUsed: `${Math.round(mem.heapUsed / 1024 / 1024)} MB`,
+      heapTotal: `${Math.round(mem.heapTotal / 1024 / 1024)} MB`,
+      rss: `${Math.round(mem.rss / 1024 / 1024)} MB`,
+    },
+    version: process.env.npm_package_version || '1.0.0',
+    nodeVersion: process.version,
+    env: process.env.NODE_ENV || 'development',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// ─── Root & API Discovery Routes ────────────────────────────────────────────
+const API = '/api/v1';
+
+app.get(['/', API], (req, res) => {
+  res.status(200).json({
+    name: 'Picky E-Commerce REST API',
+    version: process.env.npm_package_version || '1.0.0',
+    status: 'online',
+    health: '/health',
+    endpoints: {
+      auth: `${API}/auth`,
+      products: `${API}/products`,
+      categories: `${API}/categories`,
+      subcategories: `${API}/subcategories`,
+      cart: `${API}/cart`,
+      wishlist: `${API}/wishlist`,
+      orders: `${API}/orders`,
+      returns: `${API}/returns`,
+      reviews: `${API}/reviews`,
+      notifications: `${API}/notifications`,
+      settings: `${API}/settings`,
+    },
     timestamp: new Date().toISOString(),
   });
 });
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
-const API = '/api/v1';
 app.use(`${API}/auth`, authRoutes);
 app.use(`${API}/products`, productRoutes);
 app.use(`${API}/categories`, categoryRoutes);
