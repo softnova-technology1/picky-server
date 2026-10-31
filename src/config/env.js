@@ -20,6 +20,14 @@ const optionalInDev = [
 ];
 
 const validateEnv = () => {
+  // Normalize WATI V3 env aliases
+  if (!process.env.WATI_API_ENDPOINT && process.env.WATI_BASE_URL) {
+    process.env.WATI_API_ENDPOINT = process.env.WATI_BASE_URL;
+  }
+  if (!process.env.WATI_ACCESS_TOKEN && process.env.WATI_API_KEY) {
+    process.env.WATI_ACCESS_TOKEN = process.env.WATI_API_KEY;
+  }
+
   const isDev = (process.env.NODE_ENV || 'development') === 'development';
   const missingCore = requiredCore.filter((key) => !process.env[key]);
 
