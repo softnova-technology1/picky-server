@@ -55,9 +55,9 @@ const start = async () => {
     // 7. Initialize BullMQ Asynchronous Queues & Background Workers
     try {
       const { initWorkers } = require('./workers');
-      initWorkers();
+      initWorkers().catch((e) => logger.warn(`⚠️ BullMQ startup notice: ${e?.message || e}`));
     } catch (workerErr) {
-      logger.warn(`⚠️ BullMQ workers initialization warning: ${workerErr.message}`);
+      logger.warn(`⚠️ BullMQ workers initialization notice: ${workerErr.message}`);
     }
   });
 

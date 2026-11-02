@@ -1,4 +1,5 @@
 const { Queue, Worker } = require('bullmq');
+const net = require('net');
 const logger = require('../utils/logger');
 
 /**
@@ -39,6 +40,33 @@ const getRedisConnectionOptions = () => {
 const connectionOptions = getRedisConnectionOptions();
 
 /**
+ * Fast non-blocking TCP probe to check if Redis is actively accepting connections
+ */
+const isRedisAvailable = (timeoutMs = 1200) => {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    socket.setTimeout(timeoutMs);
+
+    socket.once('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+
+    socket.once('timeout', () => {
+      socket.destroy();
+      resolve(false);
+    });
+
+    socket.once('error', () => {
+      socket.destroy();
+      resolve(false);
+    });
+
+    socket.connect(connectionOptions.port, connectionOptions.host);
+  });
+};
+
+/**
  * Factory to create a BullMQ Queue with standardized error handling and retry defaults.
  */
 const createQueue = (name, customOptions = {}) => {
@@ -62,7 +90,10 @@ const createQueue = (name, customOptions = {}) => {
   });
 
   queue.on('error', (err) => {
-    logger.warn(`[BullMQ Queue "${name}"] Connection warning: ${err.message}`);
+    const msg = err?.message || err?.code || 'Connection error';
+    if (!msg.includes('ECONNREFUSED')) {
+      logger.warn(`[BullMQ Queue "${name}"] Warning: ${msg}`);
+    }
   });
 
   return queue;
@@ -91,7 +122,10 @@ const createWorker = (name, processor, customOptions = {}) => {
   });
 
   worker.on('error', (err) => {
-    logger.warn(`⚠️ [BullMQ Worker "${name}"] Connection warning: ${err.message}`);
+    const msg = err?.message || err?.code || 'Connection error';
+    if (!msg.includes('ECONNREFUSED')) {
+      logger.warn(`⚠️ [BullMQ Worker "${name}"] Warning: ${msg}`);
+    }
   });
 
   return worker;
@@ -99,7 +133,7 @@ const createWorker = (name, processor, customOptions = {}) => {
 
 module.exports = {
   connectionOptions,
+  isRedisAvailable,
   createQueue,
   createWorker,
 };
-
