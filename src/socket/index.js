@@ -10,7 +10,7 @@ let io = null;
 const initSocket = (httpServer) => {
   const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:80,http://localhost')
     .split(',')
-    .map((o) => o.trim())
+    .map((o) => o.trim().replace(/\/$/, ''))
     .filter(Boolean);
 
   io = new Server(httpServer, {

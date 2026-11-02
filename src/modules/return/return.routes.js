@@ -8,9 +8,11 @@ const { requireRole } = require('../../middleware/role.middleware');
 router.post('/', optionalAuthenticate, ReturnController.create);
 router.get('/my-returns', authenticate, ReturnController.getMyReturns);
 
+// Returns Retrieval (Admin gets all + KPIs; Customer gets own returns; Unauthenticated gets empty list)
+router.get('/', optionalAuthenticate, ReturnController.getAll);
+router.get('/:id', optionalAuthenticate, ReturnController.getById);
+
 // Admin Returns & Reverse Logistics Management
-router.get('/', authenticate, requireRole('admin'), ReturnController.getAll);
-router.get('/:id', authenticate, requireRole('admin'), ReturnController.getById);
 router.patch('/:id/approve', authenticate, requireRole('admin'), ReturnController.approve);
 router.patch('/:id/in-transit', authenticate, requireRole('admin'), ReturnController.markInTransit);
 router.patch('/:id/inspect', authenticate, requireRole('admin'), ReturnController.markInspected);
