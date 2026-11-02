@@ -44,7 +44,7 @@ app.use(helmet({
 app.use(cors({
   origin: (process.env.ALLOWED_ORIGINS || 'http://localhost:3000')
     .split(',')
-    .map((origin) => origin.trim())
+    .map((origin) => origin.trim().replace(/\/$/, ''))
     .filter(Boolean),
   credentials: true,
 }));

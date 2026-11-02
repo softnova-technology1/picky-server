@@ -32,14 +32,18 @@ const sendTemplateMessage = async (phone, templateName, customParams = [], textF
       // ── WATI API V3 (Current Standard) ──────────────────────────────────
       try {
         const endpoint = `${WATI_ENDPOINT}/messageTemplates/send`;
+        const channelNumber = (process.env.WATI_CHANNEL_NUMBER || '918300295721').replace(/\D/g, '');
         const res = await axios.post(
           endpoint,
           {
             template_name: templateName,
             broadcast_name: `picky_${templateName}_${Date.now()}`,
+            channel_number: channelNumber,
             recipients: [
               {
+                phone_number: formattedPhone,
                 target: formattedPhone,
+                custom_params: customParams,
                 parameters: customParams,
               },
             ],

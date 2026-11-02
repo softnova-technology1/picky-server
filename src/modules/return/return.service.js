@@ -320,7 +320,21 @@ const ReturnService = {
    * Customer: Get all returns for logged in user
    */
   async getCustomerReturns(userId) {
-    return Return.find({ user: userId }).sort({ createdAt: -1 }).lean();
+    if (!userId) return [];
+    try {
+      const userOrders = await Order.find({ user: userId }).select('_id').lean();
+      const orderIds = (userOrders || []).map((o) => o._id);
+      return await Return.find({
+        $or: [
+          { user: userId },
+          ...(orderIds.length > 0 ? [{ order: { $in: orderIds } }] : []),
+        ],
+      })
+        .sort({ createdAt: -1 })
+        .lean();
+    } catch (_err) {
+      return await Return.find({ user: userId }).sort({ createdAt: -1 }).lean();
+    }
   },
 };
 
