@@ -61,6 +61,11 @@ const updateBlogData = async (req, res, next) => {
       { new: true, upsert: true }
     );
 
+    try {
+      const { emitCatalogUpdate } = require('../../socket');
+      emitCatalogUpdate('BLOG_UPDATED', updatedBlog);
+    } catch (_) {}
+
     logger.info('Updated Blog page data in MongoDB');
     return res.json(ApiResponse.success(updatedBlog, 'Blog data updated successfully'));
   } catch (err) {
