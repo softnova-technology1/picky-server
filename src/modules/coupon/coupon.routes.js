@@ -6,6 +6,10 @@ const { requireRole } = require('../../middleware/role.middleware');
 const { validate } = require('../../middleware/validate.middleware');
 const { createCouponSchema, updateCouponSchema } = require('./coupon.schema');
 
+// Public Storefront Endpoints (Customer Checkout)
+router.get('/public', couponController.getPublicCoupons);
+router.post('/validate', couponController.validateCoupon);
+
 // Admin Coupon Management
 router.get('/', authenticate, requireRole('admin'), couponController.list);
 router.get('/:id', authenticate, requireRole('admin'), couponController.getById);

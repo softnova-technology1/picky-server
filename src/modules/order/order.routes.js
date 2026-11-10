@@ -26,11 +26,20 @@ router.get('/:id', authenticate, orderController.orderDetail);
 router.get('/:id/tracking', authenticate, orderController.getTracking);
 router.patch('/:id/cancel', authenticate, orderController.customerCancelOrder);
 
+// ─── Shiprocket Public Hooks & Utilities ──────────────────────────────────────
+router.post('/shiprocket/webhook', orderController.handleShiprocketWebhook);
+router.post('/serviceability', orderController.checkDeliveryPincode);
+router.get('/shiprocket/track/:awb', orderController.trackShiprocketOrder);
+
 // ─── Admin Order & Dispatch Management (Protected) ──────────────────────────
 router.get('/admin/list', authenticate, requireRole('admin'), orderController.adminListOrders);
 router.get('/admin/:id', authenticate, requireRole('admin'), orderController.adminOrderDetail);
 router.patch('/admin/:id/tracking', authenticate, requireRole('admin'), validate(addTrackingSchema), orderController.addTracking);
 router.patch('/admin/:id/status', authenticate, requireRole('admin'), validate(updateStatusSchema), orderController.updateStatus);
 router.delete('/admin/:id', authenticate, requireRole('admin'), orderController.deleteOrder);
+
+// ─── Admin Shiprocket 1-Click Dispatch & Label ────────────────────────────────
+router.post('/admin/:id/shiprocket/ship', authenticate, requireRole('admin'), orderController.shipViaShiprocket);
+router.get('/admin/:id/shiprocket/label', authenticate, requireRole('admin'), orderController.getShiprocketLabel);
 
 module.exports = router;
