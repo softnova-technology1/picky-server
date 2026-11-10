@@ -55,10 +55,15 @@ const initSocket = (httpServer) => {
       }
     }
 
-    // Explicit room joins from client
+    // Explicit room joins from client (Strictly role-protected)
     socket.on('admin:join', () => {
-      socket.join('admin');
-      logger.info(`👑 [Socket.IO] Socket joined admin room: ${socket.id}`);
+      if (socket.userRole === 'admin' || socket.userRole === 'superadmin') {
+        socket.join('admin');
+        logger.info(`👑 [Socket.IO] Verified admin socket joined admin room: ${socket.id}`);
+      } else {
+        logger.warn(`⚠️ [Socket.IO] Unauthorized attempt to join admin room from socket: ${socket.id}`);
+        socket.emit('error', { message: 'Unauthorized: Admin privileges required' });
+      }
     });
 
     socket.on('order:watch', (orderId) => {
