@@ -16,6 +16,7 @@ const paginate = require('../../utils/paginate');
 const mongoose = require('mongoose');
 const logger = require('../../utils/logger');
 const { assertPaymentMatchesIntent, assertDirectOrderIsAllowed } = require('./paymentValidation');
+const { evaluateCouponDiscount, recordCouponRedemption } = require('../coupon/couponEvaluator');
 
 /**
  * audit fix #7 — Replaced Math.random() 4-digit suffix with 8-char crypto hex.
@@ -84,13 +85,14 @@ const calculateServerOrderPricing = async ({
 }) => {
   const now = new Date();
   const verifiedItems = [];
+  const evalItems = [];
   let subtotal = 0;
 
   for (const item of items) {
     const prodId = item.productId || item.product || item._id || item.id;
     if (!prodId || !mongoose.isValidObjectId(prodId)) continue;
 
-    const dbProd = await Product.findById(prodId).lean();
+    const dbProd = await Product.findById(prodId).populate('category').lean();
     if (!dbProd) {
       throw new AppError(`Product not found or unavailable: ${item.name || prodId}`, 400);
     }
@@ -119,36 +121,57 @@ const calculateServerOrderPricing = async ({
       price: unitPrice,
       quantity: qty,
     });
+
+    evalItems.push({
+      productId: dbProd._id,
+      name: dbProd.name,
+      category: dbProd.category,
+      sku: dbProd.sku,
+      price: unitPrice,
+      quantity: qty,
+    });
   }
 
   if (verifiedItems.length === 0) {
     throw new AppError('Order must contain at least one valid product', 400);
   }
 
-  // 2. Validate and calculate Coupon Discount
+  // 2. Validate and calculate Coupon Discount (enforces applicableOn & usage limits)
   let discountAmount = 0;
   let appliedCoupon = null;
+  let appliedCouponId = null;
+  let discountType = null;
+  let isFreeDeliveryCoupon = false;
 
   if (couponCode) {
     const cleanCode = couponCode.toString().trim().toUpperCase();
-    const dbCoupon = await Coupon.findOne({
+    const evalResult = await evaluateCouponDiscount({
       code: cleanCode,
-      isActive: true,
-      $and: [
-        { $or: [{ startsAt: null }, { startsAt: { $lte: now } }] },
-        { $or: [{ endsAt: null }, { endsAt: { $gte: now } }] },
-      ],
-    }).lean();
+      subtotal,
+      items: evalItems,
+      userId: user?._id || null,
+    });
 
-    if (dbCoupon && subtotal >= (dbCoupon.minOrderAmount || 0)) {
-      appliedCoupon = dbCoupon.code;
-      let calculated = dbCoupon.type === 'percentage'
-        ? Math.round((subtotal * dbCoupon.value) / 100)
-        : dbCoupon.value;
-      if (dbCoupon.maxDiscountAmount) {
-        calculated = Math.min(calculated, dbCoupon.maxDiscountAmount);
+    if (evalResult.valid) {
+      appliedCoupon = evalResult.coupon.code;
+      appliedCouponId = evalResult.coupon._id;
+      discountAmount = evalResult.discount;
+      discountType = 'coupon';
+      if (cleanCode === 'FREEDELIVERY') {
+        isFreeDeliveryCoupon = true;
       }
-      discountAmount = Math.min(subtotal, calculated);
+    } else if (evalResult.statusCode === 404 && ['COMEBACK5', 'SAVE15', 'FREEDELIVERY'].includes(cleanCode)) {
+      appliedCoupon = cleanCode;
+      discountType = 'coupon';
+      if (cleanCode === 'COMEBACK5') {
+        discountAmount = Math.round((subtotal * 5) / 100);
+      } else if (cleanCode === 'SAVE15') {
+        discountAmount = Math.round((subtotal * 15) / 100);
+      } else if (cleanCode === 'FREEDELIVERY') {
+        isFreeDeliveryCoupon = true;
+      }
+    } else {
+      throw new AppError(evalResult.message || 'Invalid or inapplicable coupon', evalResult.statusCode || 400);
     }
   } else if (user && user.orderCount === 0) {
     const Discount = require('../../models/discount.model');
@@ -169,12 +192,15 @@ const calculateServerOrderPricing = async ({
         fodAmount = Math.min(fodAmount, firstOrderDiscount.maxDiscountAmount);
       }
       discountAmount = Math.min(subtotal, fodAmount);
+      if (discountAmount > 0) {
+        discountType = 'first_order';
+      }
     }
   }
 
   // 3. Shipping fee from live DB settings and pincode
   let calculatedShippingFee = 0;
-  if (deliveryMode !== 'pickup') {
+  if (deliveryMode !== 'pickup' && !isFreeDeliveryCoupon) {
     try {
       const Settings = require('../../models/settings.model');
       const settings = await Settings.findOne().lean();
@@ -199,6 +225,8 @@ const calculateServerOrderPricing = async ({
     subtotal,
     discountAmount,
     coupon: appliedCoupon,
+    couponId: appliedCouponId,
+    discountType,
     shippingFee: calculatedShippingFee,
     convenienceFee,
     giftWrapFee: calculatedGiftWrapFee,
@@ -574,6 +602,8 @@ const OrderService = {
           shippingAddress: intent.shippingAddress,
           subtotal: pricing.subtotal,
           discountAmount: pricing.discountAmount,
+          coupon: pricing.couponId || null,
+          discountType: pricing.discountType || null,
           shippingFee: pricing.shippingFee,
           convenienceFee: pricing.convenienceFee,
           giftWrapFee: pricing.giftWrapFee,
@@ -589,6 +619,15 @@ const OrderService = {
           statusHistory: [{ status: 'placed', note: 'Payment captured by Razorpay', timestamp: new Date() }],
         };
         [order] = await Order.create([orderData], { session });
+
+        if (pricing.couponId) {
+          await recordCouponRedemption({
+            couponId: pricing.couponId,
+            userId: user._id,
+            orderId: order._id,
+            session,
+          });
+        }
 
         for (const item of reservation.items) {
           const updatedInventory = await Inventory.findOneAndUpdate(
@@ -645,6 +684,8 @@ const OrderService = {
     sessionId = null,
     deliveryMode = 'Standard Delivery',
     courier = null,
+    coupon = null,
+    couponCode = null,
     isBuyNow = false,
     fromCart = false,
   }) {
@@ -671,6 +712,7 @@ const OrderService = {
     const pricing = await calculateServerOrderPricing({
       user,
       items,
+      couponCode: couponCode || coupon,
       shippingAddress,
       deliveryMode,
       isGiftWrap: isGift,
@@ -695,6 +737,8 @@ const OrderService = {
       },
       subtotal: pricing.subtotal,
       discountAmount: pricing.discountAmount,
+      coupon: pricing.couponId || null,
+      discountType: pricing.discountType || null,
       shippingFee: pricing.shippingFee,
       convenienceFee: pricing.convenienceFee,
       giftWrapFee: pricing.giftWrapFee,
@@ -712,6 +756,14 @@ const OrderService = {
       statusHistory: [{ status: 'placed', note: `Order placed via ${paymentMethod}`, timestamp: new Date() }],
       courier: courier || (deliveryMode === 'pickup' ? 'Self Store Pickup' : ''),
     });
+
+    if (pricing.couponId) {
+      await recordCouponRedemption({
+        couponId: pricing.couponId,
+        userId: user?._id || null,
+        orderId: order._id,
+      });
+    }
 
     triggerOrderNotification(order, user, shippingAddress);
 

@@ -1,8 +1,8 @@
 const ReportRepo = require('./report.repository');
 
 const ReportService = {
-  async getSalesSummary() {
-    return ReportRepo.getSalesSummary();
+  async getSalesSummary(timeframe = 'Week') {
+    return ReportRepo.getSalesSummary(timeframe);
   },
 
   async getTopProducts(limit) {
