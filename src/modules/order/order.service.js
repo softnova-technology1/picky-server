@@ -33,9 +33,11 @@ const triggerOrderNotification = async (order, user, shippingAddress) => {
   try {
     const Notification = require('../../models/notification.model');
     const isGift = Boolean(order.giftWrap?.isGiftWrapped);
+    const isCustom = Boolean(order.isCustomized || order.items?.some((i) => i.isCustomized));
     const giftMessage = (order.giftWrap?.message || '').trim();
     const giftMsgText = isGift ? (giftMessage ? ` • 🎁 Gift Message: "${giftMessage}"` : ' • 🎁 Gift Wrap Included (No custom message)') : '';
     const giftTitleTag = isGift ? ' 🎁 [GIFT WRAP]' : '';
+    const customTitleTag = isCustom ? ' 🎨 [CUSTOM ORDER]' : '';
     const customerName = user?.name || shippingAddress?.fullName || 'Customer';
     const totalAmt = order.total ? `₹${order.total.toLocaleString('en-IN')}` : '₹0';
     const itemsCount = order.items?.length || 1;
@@ -44,7 +46,7 @@ const triggerOrderNotification = async (order, user, shippingAddress) => {
       entityKey: `order-${order._id}`,
       type: 'order',
       category: 'Orders',
-      title: `New order received${giftTitleTag}`,
+      title: `New order received${giftTitleTag}${customTitleTag}`,
       subtitle: `Order #${order.orderNumber} · ${totalAmt}`,
       message: `${customerName} placed order for ${totalAmt} (${itemsCount} item${itemsCount > 1 ? 's' : ''}) with ${order.paymentMethod || 'Online'} Payment.${giftMsgText}`,
       unread: true,
@@ -57,6 +59,7 @@ const triggerOrderNotification = async (order, user, shippingAddress) => {
         customerName,
         total: order.total,
         isGiftWrapped: isGift,
+        isCustomized: isCustom,
         giftMessage: isGift ? (giftMessage || 'No message') : null,
         giftWrapFee: order.giftWrap?.fee || 0,
       },
@@ -65,6 +68,12 @@ const triggerOrderNotification = async (order, user, shippingAddress) => {
   } catch (err) {
     logger.warn(`[NOTIFICATION] Could not create order notification: ${err.message}`);
   }
+};
+
+const cleanProductId = (id) => {
+  if (!id) return '';
+  const s = (id?._id || id?.id || id).toString();
+  return s.includes('_custom_') ? s.split('_custom_')[0] : s;
 };
 
 const isTamilNaduPincode = (pincodeStr) => {
@@ -89,7 +98,8 @@ const calculateServerOrderPricing = async ({
   let subtotal = 0;
 
   for (const item of items) {
-    const prodId = item.productId || item.product || item._id || item.id;
+    const rawId = item.productId || item.product || item._id || item.id;
+    const prodId = cleanProductId(rawId);
     if (!prodId || !mongoose.isValidObjectId(prodId)) continue;
 
     const dbProd = await Product.findById(prodId).populate('category').lean();
@@ -111,7 +121,17 @@ const calculateServerOrderPricing = async ({
     );
     const hasActiveOffer = hasDiscountPrice && isOfferDateValid;
 
-    const unitPrice = hasActiveOffer ? Number(dbProd.discountPrice) : Number(dbProd.price);
+    const basePrice = hasActiveOffer ? Number(dbProd.discountPrice) : Number(dbProd.price);
+    const isCustomized = Boolean(item.isCustomized);
+    let customizationCost = 0;
+    if (isCustomized) {
+      customizationCost = Number(
+        item.customizationCost !== undefined
+          ? item.customizationCost
+          : (dbProd.customizationPrice || 0)
+      );
+    }
+    const unitPrice = basePrice + customizationCost;
     subtotal += unitPrice * qty;
 
     verifiedItems.push({
@@ -119,6 +139,10 @@ const calculateServerOrderPricing = async ({
       name: dbProd.name,
       image: (dbProd.images && dbProd.images[0]) || item.image || '',
       price: unitPrice,
+      basePrice,
+      customizationCost,
+      isCustomized,
+      customization: item.customization || null,
       quantity: qty,
     });
 
@@ -220,6 +244,12 @@ const calculateServerOrderPricing = async ({
   // 5. Final Total
   const finalTotal = Math.max(0, subtotal - discountAmount + calculatedShippingFee + convenienceFee + calculatedGiftWrapFee);
 
+  const hasCustomizedItems = verifiedItems.some((i) => i.isCustomized);
+  const customizationCostTotal = verifiedItems.reduce(
+    (sum, i) => sum + (Number(i.customizationCost) || 0) * (Number(i.quantity) || 1),
+    0
+  );
+
   return {
     verifiedItems,
     subtotal,
@@ -230,6 +260,8 @@ const calculateServerOrderPricing = async ({
     shippingFee: calculatedShippingFee,
     convenienceFee,
     giftWrapFee: calculatedGiftWrapFee,
+    isCustomized: hasCustomizedItems,
+    customizationCostTotal,
     total: finalTotal,
   };
 };
@@ -248,19 +280,19 @@ const OrderService = {
     if (Array.isArray(items) && items.length > 0) {
       checkoutItems = items
         .map((i) => ({
-          product: (i.productId || i.product || i._id || i.id)?.toString(),
+          product: cleanProductId(i.productId || i.product || i._id || i.id),
           quantity: Math.max(1, Number(i.quantity) || 1),
         }))
-        .filter((i) => i.product);
+        .filter((i) => i.product && mongoose.isValidObjectId(i.product));
     } else if (user) {
       const cart = await CartRepo.findByUser(user._id || user);
       if (cart && Array.isArray(cart.items) && cart.items.length > 0) {
         checkoutItems = cart.items
           .map((i) => ({
-            product: (i.product?._id || i.product)?.toString(),
+            product: cleanProductId(i.product?._id || i.product),
             quantity: Math.max(1, Number(i.quantity) || 1),
           }))
-          .filter((i) => i.product);
+          .filter((i) => i.product && mongoose.isValidObjectId(i.product));
       }
     }
 
@@ -431,8 +463,12 @@ const OrderService = {
       const cart = await CartRepo.findByUser(user._id);
       if (cart && cart.items.length > 0) {
         checkoutItems = cart.items.map((i) => ({
-          productId: i.product,
+          productId: cleanProductId(i.product?._id || i.product),
           quantity: i.quantity,
+          basePrice: i.basePrice,
+          customizationCost: i.customizationCost,
+          isCustomized: i.isCustomized,
+          customization: i.customization,
         }));
       }
     }
@@ -608,6 +644,8 @@ const OrderService = {
           convenienceFee: pricing.convenienceFee,
           giftWrapFee: pricing.giftWrapFee,
           giftWrap: intent.giftWrap || { isGiftWrapped: false, fee: 0, message: '' },
+          isCustomized: Boolean(pricing.isCustomized),
+          customizationCostTotal: pricing.customizationCostTotal || 0,
           total: pricing.total,
           paymentMethod: 'razorpay',
           paymentStatus: 'paid',
@@ -747,6 +785,8 @@ const OrderService = {
         fee: pricing.giftWrapFee,
         message: giftMessage,
       },
+      isCustomized: Boolean(pricing.isCustomized),
+      customizationCostTotal: pricing.customizationCostTotal || 0,
       total: pricing.total,
       paymentMethod,
       paymentStatus: resolvedPaymentStatus,
@@ -984,7 +1024,8 @@ const OrderService = {
     if (!mongoose.isValidObjectId(orderId)) throw new AppError('Invalid order ID', 400);
     const order = await OrderRepo.findById(orderId);
     if (!order) throw new AppError('Order not found', 404);
-    if (order.user.toString() !== userId.toString()) throw new AppError('Not authorized', 403);
+    const orderUserId = (order.user?._id || order.user)?.toString();
+    if (orderUserId !== userId.toString()) throw new AppError('Not authorized', 403);
     return order;
   },
 
@@ -992,7 +1033,8 @@ const OrderService = {
     if (!mongoose.isValidObjectId(orderId)) throw new AppError('Invalid order ID', 400);
     const order = await OrderRepo.findTracking(orderId);
     if (!order) throw new AppError('Order not found', 404);
-    if (order.user.toString() !== userId.toString()) throw new AppError('Not authorized', 403);
+    const orderUserId = (order.user?._id || order.user)?.toString();
+    if (orderUserId !== userId.toString()) throw new AppError('Not authorized', 403);
     return {
       orderNumber: order.orderNumber,
       status: order.status,

@@ -98,6 +98,14 @@ const createProductSchema = z.preprocess(
       (val) => (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val)),
       z.boolean().default(false)
     ),
+    isCustomizable: z.preprocess(
+      (val) => (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val)),
+      z.boolean().default(false)
+    ),
+    customizationPrice: z.preprocess(
+      (val) => (val === '' || val === undefined || val === null ? 0 : val),
+      z.coerce.number().min(0).default(0)
+    ),
     isActive: z.preprocess(
       (val) => (val === undefined || val === '' ? true : (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val))),
       z.boolean().default(true)
@@ -183,6 +191,14 @@ const updateProductSchema = z.preprocess(
     isDiscountActive: z.preprocess(
       (val) => (val === undefined ? undefined : (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val))),
       z.boolean().optional()
+    ),
+    isCustomizable: z.preprocess(
+      (val) => (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val)),
+      z.boolean().optional()
+    ),
+    customizationPrice: z.preprocess(
+      (val) => (val === '' || val === undefined || val === null ? 0 : val),
+      z.coerce.number().min(0).optional()
     ),
     isActive: z.preprocess(
       (val) => (val === undefined ? undefined : (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val))),

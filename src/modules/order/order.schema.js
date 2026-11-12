@@ -1,5 +1,14 @@
 const { z } = require('zod');
 
+const guestItemSchema = z.object({
+  productId: z.string(),
+  quantity: z.number().int().positive(),
+  basePrice: z.number().optional(),
+  customizationCost: z.number().optional(),
+  isCustomized: z.boolean().optional(),
+  customization: z.any().optional(),
+});
+
 const checkoutSchema = z.object({
   shippingAddress: z.object({
     street: z.string().min(1),
@@ -8,10 +17,7 @@ const checkoutSchema = z.object({
     pincode: z.string().min(4),
     landmark: z.string().optional(),
   }),
-  guestItems: z.array(z.object({
-    productId: z.string(),
-    quantity: z.number().int().positive(),
-  })).optional(), // for guest cart merge
+  guestItems: z.array(guestItemSchema).optional(), // for guest cart merge
 });
 
 const addTrackingSchema = z.object({
