@@ -3,7 +3,7 @@ const { ApiResponse } = require('../../utils/apiResponse');
 
 const getSalesSummary = async (req, res, next) => {
   try {
-    const summary = await ReportService.getSalesSummary();
+    const summary = await ReportService.getSalesSummary(req.query.timeframe || 'Week');
     return res.json(ApiResponse.success(summary));
   } catch (err) {
     next(err);

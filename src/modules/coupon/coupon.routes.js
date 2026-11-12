@@ -1,10 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const couponController = require('./coupon.controller');
-const { authenticate } = require('../../middleware/auth.middleware');
+const { authenticate, optionalAuthenticate } = require('../../middleware/auth.middleware');
 const { requireRole } = require('../../middleware/role.middleware');
 const { validate } = require('../../middleware/validate.middleware');
 const { createCouponSchema, updateCouponSchema } = require('./coupon.schema');
+
+// Public Storefront Endpoints (Customer Checkout — optional auth enables per-user limit checks)
+router.get('/public', couponController.getPublicCoupons);
+router.post('/validate', optionalAuthenticate, couponController.validateCoupon);
 
 // Admin Coupon Management
 router.get('/', authenticate, requireRole('admin'), couponController.list);

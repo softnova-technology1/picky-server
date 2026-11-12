@@ -13,6 +13,7 @@ const couponSchema = new mongoose.Schema(
     isActive: { type: Boolean, default: true },
     startsAt: { type: Date, default: null },
     endsAt: { type: Date, default: null },
+    applicableOn: { type: mongoose.Schema.Types.Mixed, default: 'All Products' },
   },
   { timestamps: true }
 );

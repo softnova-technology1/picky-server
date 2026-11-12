@@ -90,10 +90,21 @@ const orderSchema = new mongoose.Schema(
     },
     statusHistory: [statusHistorySchema], // push on every status change
 
-    // Tracking (set when admin ships the order)
-    trackingId: { type: String, default: null },  // AWB number (optional reference)
-    courier: { type: String, default: null },      // courier partner name
-    courierUrl: { type: String, default: null },   // courier tracking website URL
+    // Tracking & Shiprocket Fulfillment
+    trackingId: { type: String, default: null }, // AWB number (Shiprocket or external)
+    courier: { type: String, default: null }, // courier partner name (Delhivery, BlueDart, DTDC, etc.)
+    courierUrl: { type: String, default: null }, // courier tracking website URL
+    shiprocketOrderId: { type: String, default: null }, // Shiprocket Order ID
+    shiprocketShipmentId: { type: String, default: null }, // Shiprocket Shipment ID
+    shippingLabelUrl: { type: String, default: null }, // Printable barcode shipping label URL
+    pickupScheduledDate: { type: String, default: null }, // Scheduled courier pickup date
+    shippingStatus: { type: String, default: 'pending' }, // Shiprocket live lifecycle status
+    packageDetails: {
+      weight: { type: Number, default: 0.5 },
+      length: { type: Number, default: 15 },
+      breadth: { type: Number, default: 12 },
+      height: { type: Number, default: 5 },
+    },
   },
   { timestamps: true }
 );
