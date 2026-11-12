@@ -23,6 +23,7 @@ const ALLOWED_FOLDERS = new Set([
   'banners',
   'discounts',
   'general',
+  'customizations',
 ]);
 
 const upload = multer({
@@ -104,6 +105,55 @@ router.post(
             size: file.size,
           },
           'Reference file uploaded to S3 successfully'
+        )
+      );
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ── Customer Endpoint: Direct upload for product customization artwork directly to S3 (Max 10MB)
+router.post(
+  '/customization',
+  upload.single('image'),
+  async (req, res, next) => {
+    try {
+      const file = req.file || (req.files && req.files[0]);
+      if (!file) {
+        return res.status(400).json(ApiResponse.error('No image file provided', 400));
+      }
+
+      // Check max 10MB file limit
+      if (file.size > 10 * 1024 * 1024) {
+        return res.status(400).json(ApiResponse.error('Image size exceeds 10MB limit', 400));
+      }
+
+      let uploadBuffer = file.buffer;
+      let contentType = file.mimetype || 'image/webp';
+
+      if (file.mimetype !== 'image/svg+xml') {
+        try {
+          uploadBuffer = await sharp(file.buffer)
+            .resize(1600, 1600, { fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: 85 })
+            .toBuffer();
+          contentType = 'image/webp';
+        } catch (sharpErr) {
+          uploadBuffer = file.buffer;
+        }
+      }
+
+      const result = await uploadImage(uploadBuffer, 'picky/customizations', contentType);
+      return res.json(
+        ApiResponse.success(
+          {
+            url: result.url,
+            key: result.key,
+            name: file.originalname,
+            size: file.size,
+          },
+          'Customization image uploaded to S3 successfully'
         )
       );
     } catch (err) {
