@@ -16,16 +16,28 @@ const CartService = {
     return cart;
   },
 
-  async addItem(userId, { productId, quantity = 1 }) {
-    const pId = productId.toString();
+  async addItem(userId, { productId, quantity = 1, customizationCost, basePrice, isCustomized, customization }) {
+    const rawId = (productId || '').toString();
+    const pId = rawId.includes('_custom_') ? rawId.split('_custom_')[0] : rawId;
     const product = await Product.findById(pId).lean();
     if (!product || !product.isActive) throw new AppError('Product not found', 404);
 
     let cart = await CartRepo.findByUser(userId);
     if (!cart) cart = await CartRepo.create(userId);
 
-    const match = cart.items.find((i) => (i.product?._id || i.product || '').toString() === pId);
-    const others = cart.items.filter((i) => (i.product?._id || i.product || '').toString() !== pId);
+    const isCust = Boolean(isCustomized);
+    const orderRef = customization?.orderId || customization?.orderRef || null;
+    const match = cart.items.find((i) => {
+      const matchPid = (i.product?._id || i.product || '').toString() === pId;
+      if (!matchPid) return false;
+      if (!isCust && !i.isCustomized) return true;
+      if (isCust && i.isCustomized) {
+        const iRef = i.customization?.orderId || i.customization?.orderRef;
+        return orderRef && iRef ? orderRef === iRef : true;
+      }
+      return false;
+    });
+    const others = cart.items.filter((i) => i !== match);
     const currentQty = match ? match.quantity : 0;
     const requestedTotal = currentQty + quantity;
 
@@ -35,11 +47,19 @@ const CartService = {
       throw new AppError(`Insufficient stock. Only ${available} available (${currentQty} already in cart)`, 400);
     }
 
+    const prodBasePrice = basePrice !== undefined ? Number(basePrice) : (product.discountPrice || product.price);
+    const customCost = isCust ? (customizationCost !== undefined ? Number(customizationCost) : Number(product.customizationPrice || 0)) : 0;
+    const totalPrice = prodBasePrice + customCost;
+
     cart.items = [
       {
         product: pId,
         quantity: requestedTotal,
-        price: product.discountPrice || product.price,
+        price: totalPrice,
+        basePrice: prodBasePrice,
+        customizationCost: customCost,
+        isCustomized: isCust,
+        customization: customization || null,
         name: product.name,
         image: product.images?.[0] || null,
       },
@@ -49,8 +69,9 @@ const CartService = {
     return CartRepo.save(cart);
   },
 
-  async updateQty(userId, { productId, quantity }) {
-    const pId = productId.toString();
+  async updateQty(userId, { productId, quantity, basePrice, customizationCost, isCustomized, customization }) {
+    const rawId = (productId || '').toString();
+    const pId = rawId.includes('_custom_') ? rawId.split('_custom_')[0] : rawId;
     if (quantity <= 0) return this.removeItem(userId, pId);
 
     const inventory = await Inventory.findOne({ product: pId }).lean();
@@ -58,43 +79,56 @@ const CartService = {
       throw new AppError(`Insufficient stock. Only ${inventory.quantity} available`, 400);
     }
 
-    // Fast atomic update for existing item in cart
-    const updated = await Cart.findOneAndUpdate(
-      { user: userId, 'items.product': pId },
-      { $set: { 'items.$.quantity': quantity } },
-      { new: true }
-    );
+    let cart = await CartRepo.findByUser(userId);
+    if (!cart) cart = await CartRepo.create(userId);
 
-    if (updated) {
-      return updated;
+    const isCust = isCustomized !== undefined ? Boolean(isCustomized) : null;
+    const existingIdx = cart.items.findIndex((i) => {
+      const matchPid = (i.product?._id || i.product || '').toString() === pId;
+      if (!matchPid) return false;
+      if (isCust !== null) return Boolean(i.isCustomized) === isCust;
+      return true;
+    });
+
+    if (existingIdx > -1) {
+      cart.items[existingIdx].quantity = quantity;
+      if (isCustomized !== undefined) cart.items[existingIdx].isCustomized = Boolean(isCustomized);
+      if (basePrice !== undefined) cart.items[existingIdx].basePrice = Number(basePrice);
+      if (customizationCost !== undefined) cart.items[existingIdx].customizationCost = Number(customizationCost);
+      if (customization !== undefined) cart.items[existingIdx].customization = customization;
+      if (cart.items[existingIdx].isCustomized) {
+        const bp = cart.items[existingIdx].basePrice !== undefined ? cart.items[existingIdx].basePrice : cart.items[existingIdx].price;
+        const cc = cart.items[existingIdx].customizationCost || 0;
+        cart.items[existingIdx].price = bp + cc;
+      }
+      return CartRepo.save(cart);
     }
 
     // If item was not yet in cart, fetch product details and add
     const product = await Product.findById(pId).lean();
     if (!product || !product.isActive) throw new AppError('Product not found', 404);
 
-    return Cart.findOneAndUpdate(
-      { user: userId },
-      {
-        $push: {
-          items: {
-            $each: [{
-              product: pId,
-              quantity,
-              price: product.discountPrice || product.price,
-              name: product.name,
-              image: product.images?.[0] || null,
-            }],
-            $position: 0,
-          },
-        },
-      },
-      { new: true, upsert: true }
-    );
+    const prodBase = basePrice !== undefined ? Number(basePrice) : (product.discountPrice || product.price);
+    const prodCustom = isCust ? (customizationCost !== undefined ? Number(customizationCost) : Number(product.customizationPrice || 0)) : 0;
+
+    cart.items.unshift({
+      product: pId,
+      quantity,
+      price: prodBase + prodCustom,
+      basePrice: prodBase,
+      customizationCost: prodCustom,
+      isCustomized: Boolean(isCust),
+      customization: customization || null,
+      name: product.name,
+      image: product.images?.[0] || null,
+    });
+
+    return CartRepo.save(cart);
   },
 
   async removeItem(userId, productId) {
-    const pId = productId.toString();
+    const rawId = (productId || '').toString();
+    const pId = rawId.includes('_custom_') ? rawId.split('_custom_')[0] : rawId;
     return Cart.findOneAndUpdate(
       { user: userId },
       { $pull: { items: { product: pId } } },
@@ -145,11 +179,13 @@ const CartService = {
     if (!cart) cart = await CartRepo.create(userId);
 
     for (const item of guestItems) {
-      const pId = (item.productId || item.product || item._id || '').toString();
+      const rawId = (item.productId || item.product || item._id || '').toString();
+      const pId = rawId.includes('_custom_') ? rawId.split('_custom_')[0] : rawId;
       if (!pId) continue;
       const targetQty = item.quantity && item.quantity > 0 ? item.quantity : 1;
-      const others = cart.items.filter((i) => (i.product?._id || i.product || '').toString() !== pId);
-      const existing = cart.items.find((i) => (i.product?._id || i.product || '').toString() === pId);
+      const isCust = Boolean(item.isCustomized);
+      const others = cart.items.filter((i) => !((i.product?._id || i.product || '').toString() === pId && Boolean(i.isCustomized) === isCust));
+      const existing = cart.items.find((i) => (i.product?._id || i.product || '').toString() === pId && Boolean(i.isCustomized) === isCust);
 
       if (existing) {
         // Set exact client session quantity to prevent runaway duplicate additions
@@ -159,6 +195,10 @@ const CartService = {
             product: existing.product,
             quantity: targetQty,
             price: existing.price,
+            basePrice: existing.basePrice,
+            customizationCost: existing.customizationCost,
+            isCustomized: existing.isCustomized,
+            customization: existing.customization,
             name: existing.name,
             image: (typeof existing.image === 'string' && existing.image.startsWith('data:image/')) ? null : (existing.image || null),
           },
@@ -166,12 +206,18 @@ const CartService = {
       } else {
         const product = await Product.findById(pId).lean();
         if (product && product.isActive) {
+          const bPrice = item.basePrice !== undefined ? Number(item.basePrice) : (product.discountPrice || product.price);
+          const cCost = isCust ? (item.customizationCost !== undefined ? Number(item.customizationCost) : Number(product.customizationPrice || 0)) : 0;
           cart.items = [
             ...others,
             {
               product: pId,
               quantity: targetQty,
-              price: product.discountPrice || product.price,
+              price: bPrice + cCost,
+              basePrice: bPrice,
+              customizationCost: cCost,
+              isCustomized: isCust,
+              customization: item.customization || null,
               name: product.name,
               image: product.images?.[0] || null,
             },

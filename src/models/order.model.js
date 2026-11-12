@@ -21,6 +21,10 @@ const orderItemSchema = new mongoose.Schema(
     image: { type: String },
     price: { type: Number, required: true },
     quantity: { type: Number, required: true, min: 1 },
+    basePrice: { type: Number },
+    customizationCost: { type: Number, default: 0 },
+    isCustomized: { type: Boolean, default: false },
+    customization: { type: mongoose.Schema.Types.Mixed, default: null },
   },
   { _id: false }
 );
@@ -51,6 +55,8 @@ const orderSchema = new mongoose.Schema(
       fee: { type: Number, default: 0 },
       message: { type: String, default: '' },
     },
+    isCustomized: { type: Boolean, default: false },
+    customizationCostTotal: { type: Number, default: 0 },
     total: { type: Number, required: true },
 
     // Payment (Online / Razorpay / Card / UPI / NetBanking / Simulated)

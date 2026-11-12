@@ -4,7 +4,11 @@ const cartItemSchema = new mongoose.Schema(
   {
     product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
     quantity: { type: Number, required: true, min: 1 },
-    price: { type: Number, required: true }, // snapshot at time of add
+    price: { type: Number, required: true }, // snapshot at time of add (basePrice + customizationCost)
+    basePrice: { type: Number },
+    customizationCost: { type: Number, default: 0 },
+    isCustomized: { type: Boolean, default: false },
+    customization: { type: mongoose.Schema.Types.Mixed, default: null },
     name: { type: String, required: true },  // snapshot
     image: { type: String },                 // snapshot
   },
@@ -62,4 +66,3 @@ cartSchema.index({ 'items.0': 1, updatedAt: -1 });
 cartSchema.index({ updatedAt: -1 });
 
 module.exports = mongoose.model('Cart', cartSchema);
-

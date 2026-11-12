@@ -32,6 +32,8 @@ const productSchema = new mongoose.Schema(
     isDiscountActive: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
     isFeatured: { type: Boolean, default: false },
+    isCustomizable: { type: Boolean, default: false },
+    customizationPrice: { type: Number, default: 0, min: 0 },
     scheduledAt: { type: Date, default: null },
     isScheduled: { type: Boolean, default: false },
     sortOrder: { type: Number, default: 0 },
