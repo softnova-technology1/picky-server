@@ -75,7 +75,10 @@ const AuthService = {
         phone: user.phone,
         name: user.name,
         email: user.email,
+        dob: user.dob || '',
+        avatar: user.avatar || '',
         role: user.role,
+        createdAt: user.createdAt,
         defaultAddress: user.defaultAddress,
         addresses: user.addresses || [],
       },
@@ -179,8 +182,10 @@ const AuthService = {
         phone: user.phone,
         name: user.name,
         email: user.email,
-        avatar: user.avatar,
+        dob: user.dob || '',
+        avatar: user.avatar || '',
         role: user.role,
+        createdAt: user.createdAt,
         defaultAddress: user.defaultAddress,
         addresses: user.addresses || [],
       },
@@ -308,14 +313,58 @@ const AuthService = {
 
   async updateProfile(userId, { name, email, phone, dob, dateOfBirth, defaultAddress, addresses }) {
     const update = {};
-    if (name !== undefined) update.name = name.trim();
-    if (email !== undefined) update.email = email.toLowerCase().trim();
+    if (name !== undefined) {
+      const cleanName = typeof name === 'string' ? name.trim() : '';
+      if (!cleanName) throw new AppError('Name cannot be empty', 400);
+      update.name = cleanName;
+    }
+    if (email !== undefined) {
+      const cleanEmail = typeof email === 'string' ? email.toLowerCase().trim() : '';
+      if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+        throw new AppError('Please enter a valid email address', 400);
+      }
+      update.email = cleanEmail;
+    }
     if (phone !== undefined && phone !== null) {
       const cleanPhone = phone.toString().replace(/\D/g, '').slice(-10);
       if (cleanPhone) update.phone = cleanPhone;
     }
-    const dobVal = dob !== undefined ? dob : dateOfBirth;
-    if (dobVal !== undefined && dobVal !== null) update.dob = typeof dobVal === 'string' ? dobVal.trim() : dobVal;
+    const rawDob = dob !== undefined ? dob : dateOfBirth;
+    if (rawDob !== undefined) {
+      const dobStr = rawDob === null ? '' : String(rawDob).trim();
+      if (!dobStr) {
+        update.dob = '';
+      } else {
+        const match = /^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/.exec(dobStr);
+        let year;
+        let month;
+        let day;
+        if (match) {
+          year = Number(match[1]);
+          month = Number(match[2]);
+          day = Number(match[3]);
+        } else {
+          const parsed = new Date(dobStr);
+          if (Number.isNaN(parsed.getTime())) {
+            throw new AppError('Please enter a valid date of birth', 400);
+          }
+          year = parsed.getFullYear();
+          month = parsed.getMonth() + 1;
+          day = parsed.getDate();
+        }
+        const check = new Date(year, month - 1, day);
+        const now = new Date();
+        const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const isCalendarMatch =
+          check.getFullYear() === year &&
+          check.getMonth() === month - 1 &&
+          check.getDate() === day;
+        if (!isCalendarMatch || year < 1900 || check > todayMidnight) {
+          throw new AppError('Please enter a valid past date of birth', 400);
+        }
+        update.dob = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      }
+    }
     if (defaultAddress !== undefined) update.defaultAddress = defaultAddress;
     if (addresses !== undefined) update.addresses = addresses;
 
@@ -356,6 +405,13 @@ const AuthService = {
       isDefault: shouldBeDefault,
     };
 
+    if (!user.addresses) user.addresses = [];
+
+    const editId = addressData.addressId || addressData._id;
+    const existingIndex = editId
+      ? user.addresses.findIndex((addr) => addr._id && addr._id.toString() === editId.toString())
+      : -1;
+
     if (shouldBeDefault && Array.isArray(user.addresses)) {
       user.addresses.forEach((addr) => {
         addr.isDefault = false;
@@ -363,11 +419,21 @@ const AuthService = {
       user.defaultAddress = { ...newAddress };
     }
 
-    if (!user.addresses) user.addresses = [];
-    user.addresses.push(newAddress);
-
-    if (!user.defaultAddress || !user.defaultAddress.street) {
-      user.defaultAddress = { ...newAddress };
+    let savedAddress;
+    if (existingIndex >= 0) {
+      const target = user.addresses[existingIndex];
+      const wasDefault = Boolean(target.isDefault);
+      Object.assign(target, newAddress, { isDefault: shouldBeDefault || wasDefault });
+      if (target.isDefault) {
+        user.defaultAddress = { ...newAddress };
+      }
+      savedAddress = target;
+    } else {
+      user.addresses.push(newAddress);
+      if (!user.defaultAddress || !user.defaultAddress.street) {
+        user.defaultAddress = { ...newAddress };
+      }
+      savedAddress = user.addresses[user.addresses.length - 1];
     }
 
     await user.save();
@@ -378,15 +444,17 @@ const AuthService = {
         phone: user.phone,
         name: user.name,
         email: user.email,
-        avatar: user.avatar,
+        dob: user.dob || '',
+        avatar: user.avatar || '',
         role: user.role,
+        createdAt: user.createdAt,
         defaultAddress: user.defaultAddress,
         addresses: user.addresses || [],
       },
       phone: user.phone,
       addresses: user.addresses,
       defaultAddress: user.defaultAddress,
-      addedAddress: user.addresses[user.addresses.length - 1],
+      addedAddress: savedAddress,
     };
   },
 
