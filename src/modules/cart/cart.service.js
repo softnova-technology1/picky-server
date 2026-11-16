@@ -16,9 +16,9 @@ const CartService = {
     return cart;
   },
 
-  async addItem(userId, { productId, quantity = 1, customizationCost, basePrice, isCustomized, customization }) {
+  async addItem(userId, { productId, quantity = 1, customizationCost, basePrice, isCustomized, customization, selectedSize, selectedColor, selectedVariant, cartItemId }) {
     const rawId = (productId || '').toString();
-    const pId = rawId.includes('_custom_') ? rawId.split('_custom_')[0] : rawId;
+    const pId = rawId.includes('_custom_') ? rawId.split('_custom_')[0] : (rawId.includes('_var_') ? rawId.split('_var_')[0] : rawId);
     const product = await Product.findById(pId).lean();
     if (!product || !product.isActive) throw new AppError('Product not found', 404);
 
@@ -27,13 +27,22 @@ const CartService = {
 
     const isCust = Boolean(isCustomized);
     const orderRef = customization?.orderId || customization?.orderRef || null;
+    const cleanSize = selectedSize ? String(selectedSize) : null;
+    const cleanColor = selectedColor ? String(selectedColor) : null;
+    const targetCartKey = cartItemId || (isCust ? `${pId}_custom_${orderRef || Date.now()}` : `${pId}${cleanSize ? `_var_${cleanSize}` : ''}`);
+
     const match = cart.items.find((i) => {
+      if (cartItemId && i.cartItemId && i.cartItemId === cartItemId) return true;
       const matchPid = (i.product?._id || i.product || '').toString() === pId;
       if (!matchPid) return false;
-      if (!isCust && !i.isCustomized) return true;
       if (isCust && i.isCustomized) {
         const iRef = i.customization?.orderId || i.customization?.orderRef;
         return orderRef && iRef ? orderRef === iRef : true;
+      }
+      if (!isCust && !i.isCustomized) {
+        const sameSize = (i.selectedSize || null) === cleanSize;
+        const sameColor = (i.selectedColor || null) === cleanColor;
+        return sameSize && sameColor;
       }
       return false;
     });
@@ -42,9 +51,9 @@ const CartService = {
     const requestedTotal = currentQty + quantity;
 
     const inventory = await Inventory.findOne({ product: pId }).lean();
-    if (!inventory || inventory.quantity < requestedTotal) {
-      const available = inventory ? inventory.quantity : 0;
-      throw new AppError(`Insufficient stock. Only ${available} available (${currentQty} already in cart)`, 400);
+    const availableStock = inventory ? inventory.quantity : (typeof product.stock === 'number' ? product.stock : 10);
+    if (availableStock < requestedTotal) {
+      throw new AppError(`Insufficient stock. Only ${availableStock} available (${currentQty} already in cart)`, 400);
     }
 
     const prodBasePrice = basePrice !== undefined ? Number(basePrice) : (product.discountPrice || product.price);
@@ -62,6 +71,10 @@ const CartService = {
         customization: customization || null,
         name: product.name,
         image: product.images?.[0] || null,
+        cartItemId: targetCartKey,
+        selectedSize: cleanSize,
+        selectedColor: cleanColor,
+        selectedVariant: selectedVariant ? String(selectedVariant) : cleanSize,
       },
       ...others,
     ];
@@ -69,25 +82,33 @@ const CartService = {
     return CartRepo.save(cart);
   },
 
-  async updateQty(userId, { productId, quantity, basePrice, customizationCost, isCustomized, customization }) {
+  async updateQty(userId, { productId, quantity, basePrice, customizationCost, isCustomized, customization, selectedSize, selectedColor, cartItemId }) {
     const rawId = (productId || '').toString();
-    const pId = rawId.includes('_custom_') ? rawId.split('_custom_')[0] : rawId;
-    if (quantity <= 0) return this.removeItem(userId, pId);
+    const pId = rawId.includes('_custom_') ? rawId.split('_custom_')[0] : (rawId.includes('_var_') ? rawId.split('_var_')[0] : rawId);
+    if (quantity <= 0) return this.removeItem(userId, cartItemId || pId);
 
     const inventory = await Inventory.findOne({ product: pId }).lean();
-    if (inventory && inventory.quantity < quantity) {
-      throw new AppError(`Insufficient stock. Only ${inventory.quantity} available`, 400);
+    const product = await Product.findById(pId).lean();
+    const availableStock = inventory ? inventory.quantity : (typeof product?.stock === 'number' ? product.stock : 10);
+    if (availableStock < quantity) {
+      throw new AppError(`Insufficient stock. Only ${availableStock} available`, 400);
     }
 
     let cart = await CartRepo.findByUser(userId);
     if (!cart) cart = await CartRepo.create(userId);
 
+    const cleanSize = selectedSize ? String(selectedSize) : null;
+    const cleanColor = selectedColor ? String(selectedColor) : null;
     const isCust = isCustomized !== undefined ? Boolean(isCustomized) : null;
+
     const existingIdx = cart.items.findIndex((i) => {
+      if (cartItemId && i.cartItemId && i.cartItemId === cartItemId) return true;
       const matchPid = (i.product?._id || i.product || '').toString() === pId;
       if (!matchPid) return false;
-      if (isCust !== null) return Boolean(i.isCustomized) === isCust;
-      return true;
+      if (isCust !== null && Boolean(i.isCustomized) !== isCust) return false;
+      const sameSize = (i.selectedSize || null) === cleanSize;
+      const sameColor = (i.selectedColor || null) === cleanColor;
+      return sameSize && sameColor;
     });
 
     if (existingIdx > -1) {
@@ -105,11 +126,11 @@ const CartService = {
     }
 
     // If item was not yet in cart, fetch product details and add
-    const product = await Product.findById(pId).lean();
     if (!product || !product.isActive) throw new AppError('Product not found', 404);
 
     const prodBase = basePrice !== undefined ? Number(basePrice) : (product.discountPrice || product.price);
     const prodCustom = isCust ? (customizationCost !== undefined ? Number(customizationCost) : Number(product.customizationPrice || 0)) : 0;
+    const targetCartKey = cartItemId || (isCust ? `${pId}_custom_${Date.now()}` : `${pId}${cleanSize ? `_var_${cleanSize}` : ''}`);
 
     cart.items.unshift({
       product: pId,
@@ -121,17 +142,30 @@ const CartService = {
       customization: customization || null,
       name: product.name,
       image: product.images?.[0] || null,
+      cartItemId: targetCartKey,
+      selectedSize: cleanSize,
+      selectedColor: cleanColor,
+      selectedVariant: cleanSize,
     });
 
     return CartRepo.save(cart);
   },
 
-  async removeItem(userId, productId) {
-    const rawId = (productId || '').toString();
-    const pId = rawId.includes('_custom_') ? rawId.split('_custom_')[0] : rawId;
+  async removeItem(userId, targetKey) {
+    const rawId = (targetKey || '').toString();
+    const pId = rawId.includes('_custom_') ? rawId.split('_custom_')[0] : (rawId.includes('_var_') ? rawId.split('_var_')[0] : rawId);
     return Cart.findOneAndUpdate(
       { user: userId },
-      { $pull: { items: { product: pId } } },
+      {
+        $pull: {
+          items: {
+            $or: [
+              { cartItemId: rawId },
+              { product: pId },
+            ],
+          },
+        },
+      },
       { new: true }
     );
   },

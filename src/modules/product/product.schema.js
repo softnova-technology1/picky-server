@@ -78,7 +78,7 @@ const createProductSchema = z.preprocess(
       return val;
     }, z.object({
       type: z.string().optional(),
-      options: z.array(z.string()).optional(),
+      options: z.array(z.any()).optional(),
       default: z.string().optional(),
       colors: z.array(z.any()).optional(),
     }).optional()),
@@ -106,6 +106,16 @@ const createProductSchema = z.preprocess(
       (val) => (val === '' || val === undefined || val === null ? 0 : val),
       z.coerce.number().min(0).default(0)
     ),
+    customizationConfig: z.preprocess((val) => {
+      if (typeof val === 'string') {
+        try {
+          return JSON.parse(val);
+        } catch (_) {
+          return {};
+        }
+      }
+      return val;
+    }, z.any().optional()),
     isActive: z.preprocess(
       (val) => (val === undefined || val === '' ? true : (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val))),
       z.boolean().default(true)
@@ -172,7 +182,7 @@ const updateProductSchema = z.preprocess(
       return val;
     }, z.object({
       type: z.string().optional(),
-      options: z.array(z.string()).optional(),
+      options: z.array(z.any()).optional(),
       default: z.string().optional(),
       colors: z.array(z.any()).optional(),
     }).optional()),
@@ -200,6 +210,16 @@ const updateProductSchema = z.preprocess(
       (val) => (val === '' || val === undefined || val === null ? 0 : val),
       z.coerce.number().min(0).optional()
     ),
+    customizationConfig: z.preprocess((val) => {
+      if (typeof val === 'string') {
+        try {
+          return JSON.parse(val);
+        } catch (_) {
+          return {};
+        }
+      }
+      return val;
+    }, z.any().optional()),
     isActive: z.preprocess(
       (val) => (val === undefined ? undefined : (typeof val === 'string' ? val === 'true' || val === '1' : Boolean(val))),
       z.boolean().optional()
