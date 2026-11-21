@@ -30,6 +30,7 @@ const OrderRepository = {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
+      .maxTimeMS(25000)
       .lean(),
 
   count: (filter) => Order.countDocuments(filter),

@@ -21,7 +21,7 @@ const productSchema = new mongoose.Schema(
     characteristics: [characteristicSchema],
     variants: {
       type: { type: String, default: 'none' },
-      options: [{ type: String, trim: true }],
+      options: [{ type: mongoose.Schema.Types.Mixed }],
       default: { type: String, trim: true },
       colors: [mongoose.Schema.Types.Mixed],
     },
@@ -34,6 +34,15 @@ const productSchema = new mongoose.Schema(
     isFeatured: { type: Boolean, default: false },
     isCustomizable: { type: Boolean, default: false },
     customizationPrice: { type: Number, default: 0, min: 0 },
+    customizationConfig: {
+      type: mongoose.Schema.Types.Mixed,
+      default: () => ({
+        showFront: true,
+        showBack: true,
+        showGeneral: true,
+        materials: [],
+      }),
+    },
     scheduledAt: { type: Date, default: null },
     isScheduled: { type: Boolean, default: false },
     sortOrder: { type: Number, default: 0 },

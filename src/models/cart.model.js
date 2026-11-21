@@ -11,6 +11,10 @@ const cartItemSchema = new mongoose.Schema(
     customization: { type: mongoose.Schema.Types.Mixed, default: null },
     name: { type: String, required: true },  // snapshot
     image: { type: String },                 // snapshot
+    cartItemId: { type: String, default: null },
+    selectedSize: { type: String, default: null },
+    selectedColor: { type: String, default: null },
+    selectedVariant: { type: String, default: null },
   },
   { _id: false }
 );

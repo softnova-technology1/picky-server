@@ -201,6 +201,10 @@ const SettingsService = {
       settings.adminSidebarPages = data.adminSidebarPages;
       settings.markModified('adminSidebarPages');
     }
+    if (data && data.customizerForm) {
+      settings.customizerForm = data.customizerForm;
+      settings.markModified('customizerForm');
+    }
     if (data && data.theme) {
       settings.theme = data.theme;
       settings.markModified('theme');

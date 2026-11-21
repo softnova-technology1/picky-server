@@ -77,6 +77,10 @@ const settingsSchema = new mongoose.Schema(
         name: 'Royal Purple',
       }),
     },
+    customizerForm: {
+      type: mongoose.Schema.Types.Mixed,
+      default: () => null,
+    },
   },
   { timestamps: true, strict: false }
 );
