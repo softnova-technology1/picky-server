@@ -5,17 +5,60 @@ const logger = require('../utils/logger');
 let io = null;
 
 /**
+ * Clean & verify JWT token from handshake or event payload
+ */
+const extractAndVerifyToken = (rawToken) => {
+  if (!rawToken || typeof rawToken !== 'string') return null;
+  const cleanToken = rawToken.replace(/^Bearer\s+/i, '').trim();
+  if (!cleanToken) return null;
+  try {
+    return jwt.verify(cleanToken, process.env.JWT_ACCESS_SECRET);
+  } catch (_) {
+    return null;
+  }
+};
+
+/**
  * Initialize Socket.IO with HTTP server
  */
 const initSocket = (httpServer) => {
-  const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:80,http://localhost')
+  const envOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:80,http://localhost')
     .split(',')
     .map((o) => o.trim().replace(/\/$/, ''))
     .filter(Boolean);
 
+  const isAllowedOrigin = (origin) => {
+    if (!origin) return true;
+    const cleanOrigin = origin.trim().replace(/\/$/, '');
+    if (envOrigins.includes(cleanOrigin) || envOrigins.includes('*')) return true;
+
+    // Allow local development on any port & LAN IP (for phone preview)
+    if (process.env.NODE_ENV !== 'production') {
+      try {
+        const u = new URL(cleanOrigin);
+        if (
+          u.hostname === 'localhost' ||
+          u.hostname === '127.0.0.1' ||
+          u.hostname.startsWith('192.168.') ||
+          u.hostname.startsWith('10.')
+        ) {
+          return true;
+        }
+      } catch (_) {}
+    }
+    return false;
+  };
+
   io = new Server(httpServer, {
     cors: {
-      origin: allowedOrigins.length > 0 ? allowedOrigins : '*',
+      origin: (origin, callback) => {
+        if (isAllowedOrigin(origin)) {
+          callback(null, true);
+        } else {
+          logger.warn(`⚠️ [Socket.IO] CORS blocked origin: ${origin}`);
+          callback(new Error('CORS origin not allowed'));
+        }
+      },
       credentials: true,
       methods: ['GET', 'POST'],
     },
@@ -24,18 +67,15 @@ const initSocket = (httpServer) => {
     transports: ['websocket', 'polling'],
   });
 
-  // Optional authentication middleware for identifying customer vs admin
+  // Optional authentication middleware on connection handshake
   io.use((socket, next) => {
     try {
-      const token = socket.handshake.auth?.token || socket.handshake.query?.token;
-      if (token) {
-        try {
-          const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
-          socket.userId = decoded.id;
-          socket.userRole = decoded.role || 'customer';
-        } catch (_) {
-          // Token expired or invalid - allow anonymous connection for public catalog updates
-        }
+      const rawToken = socket.handshake.auth?.token || socket.handshake.query?.token;
+      const decoded = extractAndVerifyToken(rawToken);
+      if (decoded) {
+        socket.userId = decoded.id;
+        socket.userRole = decoded.role || 'customer';
+        logger.info(`🔌 [Socket.IO] Handshake authenticated: ${socket.id} (user: ${socket.userId}, role: ${socket.userRole})`);
       }
       next();
     } catch (err) {
@@ -51,15 +91,44 @@ const initSocket = (httpServer) => {
       socket.join(`user:${socket.userId}`);
       if (socket.userRole === 'admin' || socket.userRole === 'superadmin') {
         socket.join('admin');
-        logger.info(`👑 [Socket.IO] Admin socket joined admin room: ${socket.id}`);
+        logger.info(`👑 [Socket.IO] Admin socket joined admin room on connect: ${socket.id}`);
       }
     }
 
+    // Post-connection authentication (e.g. user logs in after page loads)
+    socket.on('user:authenticate', (data) => {
+      const decoded = extractAndVerifyToken(data?.token);
+      if (decoded) {
+        socket.userId = decoded.id;
+        socket.userRole = decoded.role || 'customer';
+        socket.join(`user:${socket.userId}`);
+        if (socket.userRole === 'admin' || socket.userRole === 'superadmin') {
+          socket.join('admin');
+        }
+        socket.emit('user:authenticated', { success: true, userId: socket.userId, role: socket.userRole });
+        logger.info(`🔑 [Socket.IO] Socket ${socket.id} authenticated post-connect: ${socket.userId} (${socket.userRole})`);
+      } else {
+        socket.emit('user:authenticated', { success: false, error: 'Invalid token' });
+      }
+    });
+
     // Explicit room joins from client (Strictly role-protected)
-    socket.on('admin:join', () => {
-      if (socket.userRole === 'admin' || socket.userRole === 'superadmin') {
+    socket.on('admin:join', (data) => {
+      let role = socket.userRole;
+      if (!role && data?.token) {
+        const decoded = extractAndVerifyToken(data.token);
+        if (decoded) {
+          socket.userId = decoded.id;
+          socket.userRole = decoded.role || 'customer';
+          role = socket.userRole;
+          socket.join(`user:${socket.userId}`);
+        }
+      }
+
+      if (role === 'admin' || role === 'superadmin') {
         socket.join('admin');
         logger.info(`👑 [Socket.IO] Verified admin socket joined admin room: ${socket.id}`);
+        socket.emit('admin:joined', { success: true });
       } else {
         logger.warn(`⚠️ [Socket.IO] Unauthorized attempt to join admin room from socket: ${socket.id}`);
         socket.emit('error', { message: 'Unauthorized: Admin privileges required' });
@@ -68,14 +137,16 @@ const initSocket = (httpServer) => {
 
     socket.on('order:watch', (orderId) => {
       if (orderId) {
-        socket.join(`order:${orderId}`);
-        logger.info(`📦 [Socket.IO] Socket ${socket.id} watching order #${orderId}`);
+        const idStr = String(orderId).trim();
+        socket.join(`order:${idStr}`);
+        logger.info(`📦 [Socket.IO] Socket ${socket.id} watching order #${idStr}`);
       }
     });
 
     socket.on('order:unwatch', (orderId) => {
       if (orderId) {
-        socket.leave(`order:${orderId}`);
+        const idStr = String(orderId).trim();
+        socket.leave(`order:${idStr}`);
       }
     });
 
@@ -127,35 +198,52 @@ const emitCatalogUpdate = (type, payload = null) => {
 };
 
 /**
- * Broadcast order updates to Admin Dashboard & Customer Tracking
+ * Broadcast new admin notification
+ */
+const emitNotification = (notification) => {
+  if (io && notification) {
+    logger.info(`🔔 [Socket.IO] Broadcasting notification: ${notification.title || notification.type || 'new'}`);
+    io.to('admin').emit('notification:new', notification);
+  }
+};
+
+/**
+ * Broadcast order updates to Admin Dashboard, Admin Orders & Customer Tracking
  */
 const emitOrderUpdate = (order, action = 'UPDATED') => {
   if (io && order) {
     const orderNumber = order.orderNumber || order._id;
+    const orderIdStr = order._id ? order._id.toString() : '';
     logger.info(`📦 [Socket.IO] Broadcasting order event: ${action} #${orderNumber}`);
 
-    // Notify Admin Dashboard
+    // 1. Notify Admin Dashboard & Orders list
     io.to('admin').emit('order:change', { action, order, timestamp: Date.now() });
 
-    // Notify the specific customer
+    // 2. Notify the specific customer
     const userId = order.user?._id || order.user;
     if (userId) {
       io.to(`user:${userId.toString()}`).emit('order:status_changed', {
         action,
-        orderId: order._id,
+        orderId: orderIdStr,
         orderNumber,
         status: order.status,
         timestamp: Date.now(),
       });
     }
 
-    // Notify anyone watching this specific order ID
-    io.to(`order:${order._id}`).emit('order:track_update', {
-      orderId: order._id,
+    // 3. Notify anyone watching this specific order ID or orderNumber
+    const trackPayload = {
+      orderId: orderIdStr,
       orderNumber,
       status: order.status,
       timestamp: Date.now(),
-    });
+    };
+    if (orderIdStr) {
+      io.to(`order:${orderIdStr}`).emit('order:track_update', trackPayload);
+    }
+    if (orderNumber && orderNumber !== orderIdStr) {
+      io.to(`order:${orderNumber}`).emit('order:track_update', trackPayload);
+    }
   }
 };
 
@@ -166,6 +254,7 @@ module.exports = {
   emitToAdmin,
   emitToUser,
   emitCatalogUpdate,
+  emitNotification,
   emitOrderUpdate,
 };
 

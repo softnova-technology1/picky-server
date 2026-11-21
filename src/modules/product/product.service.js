@@ -195,6 +195,7 @@ const ProductService = {
     });
 
     clearProductCache();
+    try { const { emitCatalogUpdate } = require('../../socket'); emitCatalogUpdate('PRODUCT_MUTATED', { productId: product._id }); } catch (_) {}
     return product;
   },
 
@@ -280,6 +281,7 @@ const ProductService = {
     }
 
     clearProductCache();
+    try { const { emitCatalogUpdate } = require('../../socket'); emitCatalogUpdate('PRODUCT_MUTATED', { productId: id }); } catch (_) {}
     return ProductRepo.update(id, updateData);
   },
 
@@ -296,6 +298,7 @@ const ProductService = {
 
     await Inventory.deleteMany({ product: id });
     clearProductCache();
+    try { const { emitCatalogUpdate } = require('../../socket'); emitCatalogUpdate('PRODUCT_MUTATED', { productId: id }); } catch (_) {}
     return ProductRepo.delete(id);
   },
 
@@ -304,6 +307,7 @@ const ProductService = {
     if (!product) throw new AppError('Product not found', 404);
     const updated = await ProductRepo.update(id, { isActive: !product.isActive });
     clearProductCache();
+    try { const { emitCatalogUpdate } = require('../../socket'); emitCatalogUpdate('PRODUCT_MUTATED', { productId: id }); } catch (_) {}
     return updated;
   },
 };

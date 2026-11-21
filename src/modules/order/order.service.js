@@ -17,6 +17,7 @@ const mongoose = require('mongoose');
 const logger = require('../../utils/logger');
 const { assertPaymentMatchesIntent, assertDirectOrderIsAllowed } = require('./paymentValidation');
 const { evaluateCouponDiscount, recordCouponRedemption } = require('../coupon/couponEvaluator');
+const { emitOrderUpdate, emitNotification } = require('../../socket');
 
 /**
  * audit fix #7 — Replaced Math.random() 4-digit suffix with 8-char crypto hex.
@@ -42,7 +43,7 @@ const triggerOrderNotification = async (order, user, shippingAddress) => {
     const totalAmt = order.total ? `₹${order.total.toLocaleString('en-IN')}` : '₹0';
     const itemsCount = order.items?.length || 1;
 
-    await Notification.create({
+    const notif = await Notification.create({
       entityKey: `order-${order._id}`,
       type: 'order',
       category: 'Orders',
@@ -65,6 +66,7 @@ const triggerOrderNotification = async (order, user, shippingAddress) => {
       },
       createdAt: order.createdAt || new Date(),
     });
+    try { emitNotification(notif); } catch (_) {}
   } catch (err) {
     logger.warn(`[NOTIFICATION] Could not create order notification: ${err.message}`);
   }
@@ -698,6 +700,7 @@ const OrderService = {
     }
 
     await triggerOrderNotification(order, user, intent.shippingAddress);
+    try { emitOrderUpdate(order, 'CREATED'); } catch (_) {}
     NotificationService.sendOrderConfirmed(
       user.phone,
       user.name || 'Customer',
@@ -1103,6 +1106,7 @@ const OrderService = {
       NotificationService.sendOrderShipped(user.phone, order.orderNumber, courier, trackingId)
         .catch((err) => logger.error(`[WATI] Order shipped notification failed: ${err.message}`));
     }
+    try { emitOrderUpdate(order, 'TRACKING_UPDATED'); } catch (_) {}
     return order;
   },
 
@@ -1202,6 +1206,7 @@ const OrderService = {
           .catch((err) => logger.error(`[WATI] Order cancelled notification failed: ${err.message}`));
       }
     }
+    try { emitOrderUpdate(order, 'STATUS_UPDATED'); } catch (_) {}
     return order;
   },
 
@@ -1255,6 +1260,7 @@ const OrderService = {
     }
 
     await OrderRepo.delete(orderId);
+    try { emitOrderUpdate(existing, 'DELETED'); } catch (_) {}
     return { success: true, message: 'Order deleted successfully' };
   },
 };
